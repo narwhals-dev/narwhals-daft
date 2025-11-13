@@ -62,4 +62,6 @@ jobs:
       - name: show-deps
         run: uv pip freeze
       - name: Run pyright
-        run: pyright narwhals_daft
+        run: |
+          pyright narwhals_daft
+          pyright test_plugin_protocol.py

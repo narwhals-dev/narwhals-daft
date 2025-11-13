@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, LiteralString
 
 if TYPE_CHECKING:
     from typing_extensions import TypeIs
@@ -22,4 +22,4 @@ def is_native(native_object: object) -> TypeIs[DaftLazyFrame]:
     return isinstance(native_object, daft.DataFrame)
 
 
-NATIVE_PACKAGE = "daft"
+NATIVE_PACKAGE: LiteralString = "daft"
