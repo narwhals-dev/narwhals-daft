@@ -3,8 +3,8 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 import daft.functions as F
-from daft.expressions import col
 from daft import lit
+from daft.expressions import col
 from narwhals._compliant.any_namespace import StringNamespace
 from narwhals._utils import not_implemented
 
@@ -65,8 +65,20 @@ class ExprStringNamespace(StringNamespace["DaftExpr"]):
 
         return self.compliant._with_elementwise(func)
 
+    def replace_all(self, value: DaftExpr, pattern: str, *, literal: bool) -> DaftExpr:
+        if literal:
+            return self.compliant._with_elementwise(
+                lambda expr, value: F.replace(expr, search=pattern, replacement=value),
+                value=value,
+            )
+        return self.compliant._with_elementwise(
+            lambda expr, value: F.regexp_replace(
+                expr, pattern=pattern, replacement=value
+            ),
+            value=value,
+        )
+
     replace = not_implemented()
-    replace_all = not_implemented()
     strip_chars = not_implemented()
     contains = not_implemented()
     to_datetime = not_implemented()

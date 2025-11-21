@@ -293,7 +293,7 @@ class DaftExpr(CompliantExpr["DaftLazyFrame", "Expression"]):
         return func
 
     def _push_down_window_function(
-        self, call: Callable[..., Expression], /, **expressifiable_args: Self
+        self, call: Callable[..., Expression], /, **expressifiable_args: DaftExpr
     ) -> WindowFunction:
         def window_f(
             df: DaftLazyFrame, window_inputs: WindowInputs
@@ -331,7 +331,7 @@ class DaftExpr(CompliantExpr["DaftLazyFrame", "Expression"]):
         )
 
     def _with_elementwise(
-        self, call: Callable[..., Expression], /, **expressifiable_args: Self | Any
+        self, call: Callable[..., Expression], /, **expressifiable_args: DaftExpr
     ) -> Self:
         return self.__class__(
             self._callable_to_eval_series(call, **expressifiable_args),
