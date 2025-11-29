@@ -23,7 +23,6 @@ TESTS_THAT_NEED_FIX = [
     "test_convert_time_zone",
     "test_convert_time_zone_from_none",
     "test_datetime",
-    "test_datetime_attributes",
     "test_drop_nulls_agg",
     "test_dt_to_string_expr",
     "test_dt_to_string_iso_local_date_expr",
