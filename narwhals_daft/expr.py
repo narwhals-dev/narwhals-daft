@@ -878,6 +878,8 @@ class DaftExpr(CompliantExpr["DaftLazyFrame", "Expression"]):
     unique = not_implemented()
     first = not_implemented()
     last = not_implemented()
+    cos = not_implemented()
+    sin = not_implemented()
 
     # namespaces
     cat = not_implemented()  # pyright: ignore[reportAssignmentType]
