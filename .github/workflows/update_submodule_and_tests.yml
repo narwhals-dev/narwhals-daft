@@ -3,6 +3,7 @@ name: Update Submodule and Run Tests
 on:
   schedule:
     - cron: '0 11 * * 4'  # Runs weekly on Thursday at 11 am
+  workflow_dispatch:
 
 env:
   PY_COLORS: 1
