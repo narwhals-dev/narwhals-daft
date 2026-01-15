@@ -30,6 +30,11 @@ and also fetch and install Narwhals as a git submodule:
 git submodule update --init --recursive
 uv pip install -e narwhals
 ```
+Keep daft to the latest version:
+
+```console
+uv pip install daft -U
+```
 
 To run the tests:
 
