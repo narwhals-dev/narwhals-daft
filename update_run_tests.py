@@ -27,6 +27,7 @@ def update_run_tests() -> None:
         capture_output=True,
         text=True,
     )
+    print(result.stdout)
 
     # Extract failed test names using regex
     failed_tests = re.findall(
