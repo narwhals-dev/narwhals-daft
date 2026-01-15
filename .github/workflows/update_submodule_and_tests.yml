@@ -36,6 +36,7 @@ jobs:
             git submodule update --init --recursive
             uv pip install -e narwhals --system
             uv pip install -e . --group tests --system
+            uv pip install daft --system
       - name: Configure git
         run: |
             git config --global user.email "github-actions[bot]@users.noreply.github.com"
