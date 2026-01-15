@@ -6,7 +6,6 @@ on:
   workflow_dispatch:
 
 env:
-  PY_COLORS: 1
   PYTEST_ADDOPTS: "--numprocesses=logical"
 
 permissions:
