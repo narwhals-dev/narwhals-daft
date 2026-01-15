@@ -2,7 +2,7 @@ name: Update Submodule and Run Tests
 
 on:
   schedule:
-    - cron: '0 11 * * 4'  # Runs weekly on Thursday at 11 am
+    - cron: '0 12 * * 4'  # Runs weekly on Thursday at midday
   workflow_dispatch:
 
 env:
@@ -36,6 +36,10 @@ jobs:
             git submodule update --init --recursive
             uv pip install -e narwhals --system
             uv pip install -e . --group tests --system
+      - name: Configure git
+        run: |
+            git config --global user.email "github-actions[bot]@users.noreply.github.com"
+            git config --global user.name "github-actions[bot]"
       - name: run-submodule-update
         run: . utils/submodule_update.sh
       - name: update-tests
