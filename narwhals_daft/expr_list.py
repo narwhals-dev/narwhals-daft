@@ -4,8 +4,8 @@ from typing import TYPE_CHECKING
 
 import daft.functions as F
 from daft import lit
-from narwhals._compliant.any_namespace import ListNamespace
 from narwhals._utils import not_implemented
+from narwhals.compliant import ListNamespace
 
 if TYPE_CHECKING:
     from daft import Expression
