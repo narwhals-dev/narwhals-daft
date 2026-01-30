@@ -23,7 +23,6 @@ if out.returncode != 0:
     print(out)
     sys.exit(1)
 sp.run([GIT, "reset", "--hard", "upstream/main"], check=False)
-sp.run([GIT, "submodule", "update", "--init", "--recursive"], check=False)
 
 if (
     current_branch := sp.run(
