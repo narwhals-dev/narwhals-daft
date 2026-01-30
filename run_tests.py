@@ -130,7 +130,6 @@ TESTS_THAT_NEED_FIX = [
     "test_unary",
     "test_unique",
     "test_unique_3069",
-    "test_unique_expr",
     "test_unique_expr_agg",
     "test_unique_full_subset",
     "test_unique_invalid",
