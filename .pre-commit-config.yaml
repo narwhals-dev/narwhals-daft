@@ -3,7 +3,7 @@ ci:
 repos:
 - repo: https://github.com/astral-sh/ruff-pre-commit
   # Ruff version.
-  rev: 'v0.14.3'
+  rev: 'v0.14.14'
   hooks:
     # Run the formatter.
     - id: ruff-format
@@ -17,7 +17,7 @@ repos:
       files: \.(py|rst|md)$
       args: [--ignore-words-list=set]
 - repo: https://github.com/crate-ci/typos
-  rev: 'v1.39.0'
+  rev: 'v1'
   hooks:
     - id: typos
 - repo: https://github.com/pre-commit/pre-commit-hooks
