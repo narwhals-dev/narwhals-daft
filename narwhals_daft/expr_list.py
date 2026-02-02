@@ -4,7 +4,6 @@ from typing import TYPE_CHECKING
 
 import daft.functions as F
 from daft import lit
-from narwhals._utils import not_implemented
 from narwhals.compliant import ListNamespace
 
 if TYPE_CHECKING:
@@ -56,8 +55,26 @@ class ExprListNamespace(ListNamespace["DaftExpr"]):
 
         return self.compliant._with_elementwise(func)
 
+    def get(self, index: int) -> DaftExpr:
+        return self.compliant._with_elementwise(lambda expr: F.get(expr, key=index))
+
+    def median(self) -> DaftExpr:
+        def func(expr: Expression) -> Expression:
+            sorted_expr = F.list_sort(expr, nulls_first=False)
+            size = F.list_count(sorted_expr, mode="valid")
+            mid_index = (size / lit(2)).cast("int").fill_null(0)
+            odd_case = F.get(sorted_expr, key=mid_index)
+            even_case = (
+                F.get(sorted_expr, key=mid_index - lit(1))
+                + F.get(sorted_expr, key=mid_index)
+            ) / lit(2)
+            return (
+                F.when((size.is_null()) | (size == lit(0)), lit(None))
+                .when(size % lit(2) == lit(1), odd_case)
+                .otherwise(even_case)
+            )
+
+        return self.compliant._with_elementwise(func)
+
     def contains(self, item: NonNestedliteral) -> DaftExpr:
         return self.compliant._with_elementwise(lambda expr: F.is_in(expr, item))
-
-    get = not_implemented()
-    median = not_implemented()
