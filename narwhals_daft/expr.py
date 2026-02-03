@@ -379,6 +379,7 @@ class DaftExpr(CompliantExpr["DaftLazyFrame", "Expression"]):
         method_name: str,
         returns_scalar: bool,
         **kwargs: Any,
+        # not sure about this
     ) -> Sequence[Expression]:
         kwargs = {
             name: df._evaluate_single_output_expr(value)
@@ -391,6 +392,7 @@ class DaftExpr(CompliantExpr["DaftLazyFrame", "Expression"]):
             **self._reuse_series_extra_kwargs(returns_scalar=returns_scalar),
             **kwargs,
         )
+        # not sure about this
         out: Sequence[Expression] = [
             series._from_scalar(method(series)) if returns_scalar else method(series)
             for series in self(df)
