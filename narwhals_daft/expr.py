@@ -582,6 +582,11 @@ class DaftExpr(CompliantExpr["DaftLazyFrame", "Expression"]):
     def is_in(self, other: Sequence[Any]) -> DaftExpr:
         return self._with_elementwise(lambda _input: _input.is_in(other))
 
+    def filter(self, *predicates: DaftExpr) -> DaftExpr:
+        plx = self.__narwhals_namespace__()
+        predicate = plx.all_horizontal(*predicates, ignore_nulls=False)
+        return self._reuse_series("filter", predicate=predicate)
+
     def round(self, decimals: int) -> DaftExpr:
         return self._with_elementwise(lambda _input: _input.round(decimals))
 
@@ -867,7 +872,6 @@ class DaftExpr(CompliantExpr["DaftLazyFrame", "Expression"]):
         return ExprListNamespace(self)
 
     drop_nulls = not_implemented()
-    filter = not_implemented()
     ewm_mean = not_implemented()
     kurtosis = not_implemented()
     map_batches = not_implemented()
