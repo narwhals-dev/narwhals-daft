@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import operator as op
+from functools import partial
 from typing import TYPE_CHECKING, Any, Literal, TypeAlias, cast
 
 import daft.functions as F
@@ -369,6 +370,33 @@ class DaftExpr(CompliantExpr["DaftLazyFrame", "Expression"]):
             evaluate_output_names=self._evaluate_output_names,
             alias_output_names=alias_output_names,
             version=self._version,
+        )
+
+    def _reuse_series(
+        self, method_name: str, *, returns_scalar: bool = False, **kwargs: Any
+    ) -> DaftExpr:
+        """Reuse Series implementation for expression.
+
+        If Series.foo is already defined, and we'd like Expr.foo to be the same, we can
+        leverage this method to do that for us.
+
+        Arguments:
+            method_name: name of method.
+            returns_scalar: whether the Series version returns a scalar. In this case,
+                the expression version should return a 1-row Series.
+            kwargs: keyword arguments to pass to function.
+        """
+        func = partial(
+            self._reuse_series_inner,
+            method_name=method_name,
+            returns_scalar=returns_scalar,
+            **kwargs,
+        )
+        return self._from_callable(
+            func,
+            evaluate_output_names=self._evaluate_output_names,
+            alias_output_names=self._alias_output_names,
+            context=self,
         )
 
     def __and__(self, other: DaftExpr) -> DaftExpr:
