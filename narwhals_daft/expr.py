@@ -109,6 +109,24 @@ class DaftExpr(CompliantExpr["DaftLazyFrame", "Expression"]):
         """
         return self._metadata.expansion_kind.is_multi_unnamed()
 
+    @classmethod
+    def _from_callable(
+        cls,
+        # TODO: I think this is wrong
+        func: Callable[..., Expression],
+        *,
+        evaluate_output_names: EvalNames,
+        alias_output_names: AliasNames | None,
+        context: _LimitedContext,
+    ) -> DaftExpr:
+        return cls(
+            func,
+            evaluate_output_names=evaluate_output_names,
+            alias_output_names=alias_output_names,
+            implementation=context._implementation,  # type: ignore[PGH003]
+            version=context._version,
+        )
+
     @property
     def window_function(self) -> WindowFunction:
         def default_window_func(
