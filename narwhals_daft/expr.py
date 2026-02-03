@@ -10,7 +10,7 @@ from narwhals._expression_parsing import (
     combine_alias_output_names,
     combine_evaluate_output_names,
 )
-from narwhals._utils import Implementation, not_implemented
+from narwhals._utils import Implementation, not_implemented, zip_strict
 from narwhals.compliant import CompliantExpr
 
 from narwhals_daft.expr_dt import ExprDateTimeNamesSpace
@@ -371,6 +371,41 @@ class DaftExpr(CompliantExpr["DaftLazyFrame", "Expression"]):
             alias_output_names=alias_output_names,
             version=self._version,
         )
+
+    def _reuse_series_inner(
+        self,
+        df: DaftLazyFrame,
+        *,
+        method_name: str,
+        returns_scalar: bool,
+        **kwargs: Any,
+    ) -> Sequence[Expression]:
+        kwargs = {
+            name: df._evaluate_single_output_expr(value)
+            if self._is_expr(value)
+            else value
+            for name, value in kwargs.items()
+        }
+        method = op.methodcaller(
+            method_name,
+            **self._reuse_series_extra_kwargs(returns_scalar=returns_scalar),
+            **kwargs,
+        )
+        out: Sequence[Expression] = [
+            series._from_scalar(method(series)) if returns_scalar else method(series)
+            for series in self(df)
+        ]
+        aliases, names = self._evaluate_aliases(df), (s.name for s in out)
+        if any(
+            alias != name for alias, name in zip_strict(aliases, names)
+        ):  # pragma: no cover
+            # TODO: adapt to daft??
+            msg = (
+                f"Safety assertion failed, please report a bug to https://github.com/narwhals-dev/narwhals/issues\n"
+                f"Expression aliases: {aliases}\n"
+            )
+            raise AssertionError(msg)
+        return out
 
     def _reuse_series(
         self, method_name: str, *, returns_scalar: bool = False, **kwargs: Any
