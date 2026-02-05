@@ -1,4 +1,5 @@
 *.pyc
 .vscode/
+.hypothesis/
 uv.lock
 run_tests.sh.bak
