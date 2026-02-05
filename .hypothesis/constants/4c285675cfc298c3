@@ -1,0 +1,4 @@
+# file: /home/runner/work/narwhals-daft/narwhals-daft/narwhals/narwhals/testing/asserts/utils.py
+# hypothesis_version: 6.151.5
+
+['DataFrames', 'Series', 'dtype mismatch', 'dtypes do not match', 'exact value mismatch', 'inputs', 'length mismatch', 'name mismatch', 'null value mismatch']

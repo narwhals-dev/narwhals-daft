@@ -1,0 +1,4 @@
+# file: /home/runner/work/narwhals-daft/narwhals-daft/narwhals/narwhals/stable/v1/selectors.py
+# hypothesis_version: 6.151.5
+
+['all', 'boolean', 'by_dtype', 'categorical', 'datetime', 'matches', 'numeric', 'string']

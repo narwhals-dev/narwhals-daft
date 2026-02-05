@@ -1,0 +1,4 @@
+# file: /home/runner/work/narwhals-daft/narwhals-daft/narwhals/narwhals/plugins.py
+# hypothesis_version: 6.151.5
+
+['.', 'CompliantFrameAny', 'EntryPoints', 'FrameT', 'FromNativeR_co', 'Plugin', 'daft', 'from_native', 'narwhals.plugins']

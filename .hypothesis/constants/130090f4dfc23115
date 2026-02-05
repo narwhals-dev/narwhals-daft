@@ -1,0 +1,4 @@
+# file: /home/runner/work/narwhals-daft/narwhals-daft/narwhals/narwhals/translate.py
+# hypothesis_version: 6.151.5
+
+[2024, 'T', '__native_namespace__', 'datetime64[ns]', 'full', 'get_native_namespace', 'interchange', 'narwhalify', 'to_native', 'to_py_scalar']

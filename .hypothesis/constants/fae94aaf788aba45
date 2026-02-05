@@ -1,0 +1,4 @@
+# file: /home/runner/work/narwhals-daft/narwhals-daft/narwhals/narwhals/_compliant/namespace.py
+# hypothesis_version: 6.151.5
+
+['CompliantNamespace', 'EagerNamespace', 'LazyNamespace', '_alias_output_names', 'diagonal', 'horizontal', 'literal', 'vertical']

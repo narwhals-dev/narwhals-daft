@@ -1,0 +1,4 @@
+# file: /home/runner/work/narwhals-daft/narwhals-daft/narwhals/narwhals/stable/v2/typing.py
+# hypothesis_version: 6.151.5
+
+['DataFrameT', 'DataFrame[Any]', 'Expr', 'Frame', 'FrameT', 'IntoDataFrame', 'IntoDataFrameT', 'IntoExpr', 'IntoFrame', 'IntoFrameT', 'IntoLazyFrame', 'IntoLazyFrameT', 'IntoSeries', 'IntoSeriesT', 'LazyFrameT', 'LazyFrame[Any]', 'SeriesT', 'Series[Any]']

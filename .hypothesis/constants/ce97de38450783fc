@@ -1,0 +1,4 @@
+# file: /home/runner/work/narwhals-daft/narwhals-daft/narwhals/narwhals/_compliant/group_by.py
+# hypothesis_version: 6.151.5
+
+['CompliantGroupBy', 'DepthTrackingGroupBy', 'EagerGroupBy']

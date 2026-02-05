@@ -1,0 +1,4 @@
+# file: /home/runner/work/narwhals-daft/narwhals-daft/narwhals/narwhals/expr_name.py
+# hypothesis_version: 6.151.5
+
+['Expr', 'ExprT', 'name.keep', 'name.map', 'name.prefix', 'name.suffix', 'name.to_lowercase', 'name.to_uppercase']

@@ -1,0 +1,4 @@
+# file: /home/runner/work/narwhals-daft/narwhals-daft/narwhals/narwhals/_compliant/series.py
+# hypothesis_version: 6.151.5
+
+['CompliantSeries', 'EagerSeries', 'EagerSeriesHist', 'EagerSeriesNamespace', 'Into1DArray', 'Iterable[Any]', '_1DArray', '_CountsT_co', 'both', 'breakpoint', 'count', 'full', 'none']

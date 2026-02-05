@@ -1,0 +1,4 @@
+# file: /home/runner/work/narwhals-daft/narwhals-daft/narwhals/narwhals/testing/__init__.py
+# hypothesis_version: 6.151.5
+
+['assert_frame_equal', 'assert_series_equal']

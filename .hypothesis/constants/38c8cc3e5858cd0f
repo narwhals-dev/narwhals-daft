@@ -1,0 +1,4 @@
+# file: /home/runner/work/narwhals-daft/narwhals-daft/narwhals/narwhals/series_dt.py
+# hypothesis_version: 6.151.5
+
+['ms', 'ns', 'us']

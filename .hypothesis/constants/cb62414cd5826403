@@ -1,0 +1,4 @@
+# file: /home/runner/work/narwhals-daft/narwhals-daft/narwhals/narwhals/expr_list.py
+# hypothesis_version: 6.151.5
+
+['Expr', 'ExprT', 'list.contains', 'list.get', 'list.len', 'list.max', 'list.mean', 'list.median', 'list.min', 'list.sort', 'list.sum', 'list.unique']

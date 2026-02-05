@@ -1,0 +1,4 @@
+# file: /home/runner/work/narwhals-daft/narwhals-daft/narwhals/narwhals/expr_dt.py
+# hypothesis_version: 6.151.5
+
+['Expr', 'ExprT', 'dt.convert_time_zone', 'dt.date', 'dt.day', 'dt.hour', 'dt.microsecond', 'dt.millisecond', 'dt.minute', 'dt.month', 'dt.nanosecond', 'dt.offset_by', 'dt.ordinal_day', 'dt.replace_time_zone', 'dt.second', 'dt.timestamp', 'dt.to_string', 'dt.total_minutes', 'dt.total_nanoseconds', 'dt.total_seconds', 'dt.truncate', 'dt.weekday', 'dt.year', 'ms', 'ns', 'us']

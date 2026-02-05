@@ -1,0 +1,4 @@
+# file: /home/runner/work/narwhals-daft/narwhals-daft/narwhals/narwhals/dtypes.py
+# hypothesis_version: 6.151.5
+
+['__slots__', '_cached_categories', '_delayed_categories', 'dtype', 'fields', 'inner', 'ms', 'name', 'ns', 'precision', 's', 'scale', 'shape', 'size', 'time_unit', 'time_zone', 'us']

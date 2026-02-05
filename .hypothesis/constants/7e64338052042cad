@@ -1,0 +1,4 @@
+# file: /home/runner/work/narwhals-daft/narwhals-daft/narwhals/narwhals/expr_str.py
+# hypothesis_version: 6.151.5
+
+['Expr', 'ExprT', 'str.contains', 'str.ends_with', 'str.len_chars', 'str.pad_end', 'str.pad_start', 'str.replace', 'str.replace_all', 'str.slice', 'str.split', 'str.starts_with', 'str.strip_chars', 'str.to_date', 'str.to_datetime', 'str.to_lowercase', 'str.to_titlecase', 'str.to_uppercase', 'str.zfill']

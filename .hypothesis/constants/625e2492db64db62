@@ -1,0 +1,4 @@
+# file: /home/runner/work/narwhals-daft/narwhals-daft/narwhals/narwhals/_compliant/dataframe.py
+# hypothesis_version: 6.151.5
+
+['CompliantDataFrame', 'CompliantFrame', 'CompliantLazyFrame', 'EagerDataFrame', 'Incomplete', 'IntoArrowTable', 'T', '_2DArray', '_NativeFrameT', 'full', 'pa.Table']

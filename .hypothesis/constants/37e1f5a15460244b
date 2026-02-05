@@ -1,0 +1,4 @@
+# file: /home/runner/work/narwhals-daft/narwhals-daft/narwhals/narwhals/_constants.py
+# hypothesis_version: 6.151.5
+
+[1000, 1970, 60000, 86400, 1000000, 60000000, 1000000000, 60000000000]

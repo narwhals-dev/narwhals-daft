@@ -1,0 +1,4 @@
+# file: /home/runner/work/narwhals-daft/narwhals-daft/narwhals/narwhals/_typing.py
+# hypothesis_version: 6.151.5
+
+['BackendT', 'cudf', 'dask', 'duckdb', 'ibis', 'modin', 'pandas', 'polars', 'pyarrow', 'pyspark', 'pyspark[connect]', 'sqlframe']

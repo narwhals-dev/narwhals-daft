@@ -1,0 +1,4 @@
+# file: /home/runner/work/narwhals-daft/narwhals-daft/narwhals/narwhals/_translate.py
+# hypothesis_version: 6.151.5
+
+['FromArrowDT_contra', 'FromDictDT_contra', 'FromIterableT_contra', 'FromNativeT', 'FromNumpyDT_contra', 'FromNumpyT_contra', 'ToArrowT_co', 'ToDictDT_co', 'ToNarwhalsT_co', 'ToNumpyT_co', 'dict[str, Any]']

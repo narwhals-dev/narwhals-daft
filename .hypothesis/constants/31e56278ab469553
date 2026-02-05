@@ -1,0 +1,4 @@
+# file: /home/runner/work/narwhals-daft/narwhals-daft/narwhals/narwhals/expr_cat.py
+# hypothesis_version: 6.151.5
+
+['Expr', 'ExprT', 'cat.get_categories']

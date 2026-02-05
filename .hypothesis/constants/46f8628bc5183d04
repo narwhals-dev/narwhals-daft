@@ -1,0 +1,4 @@
+# file: /home/runner/work/narwhals-daft/narwhals-daft/narwhals/narwhals/_typing_compat.py
+# hypothesis_version: 6.151.5
+
+[100, '...', 'TypeVar', '_Fn', 'assert_never', 'deprecated']
