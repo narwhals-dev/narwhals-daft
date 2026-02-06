@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import operator as op
+from functools import partial
 from typing import TYPE_CHECKING, Any, Literal, TypeAlias, cast
 
 import daft.functions as F
@@ -9,7 +10,7 @@ from narwhals._expression_parsing import (
     combine_alias_output_names,
     combine_evaluate_output_names,
 )
-from narwhals._utils import Implementation, not_implemented
+from narwhals._utils import Implementation, not_implemented, zip_strict
 from narwhals.compliant import CompliantExpr
 
 from narwhals_daft.expr_dt import ExprDateTimeNamesSpace
@@ -107,6 +108,24 @@ class DaftExpr(CompliantExpr["DaftLazyFrame", "Expression"]):
             nw.all().sum().
         """
         return self._metadata.expansion_kind.is_multi_unnamed()
+
+    @classmethod
+    def _from_callable(
+        cls,
+        # TODO: I think this is wrong
+        func: Callable[..., Expression],
+        *,
+        evaluate_output_names: EvalNames,
+        alias_output_names: AliasNames | None,
+        context: _LimitedContext,
+    ) -> DaftExpr:
+        return cls(
+            func,
+            evaluate_output_names=evaluate_output_names,
+            alias_output_names=alias_output_names,
+            implementation=context._implementation,  # type: ignore[PGH003]
+            version=context._version,
+        )
 
     @property
     def window_function(self) -> WindowFunction:
@@ -371,6 +390,70 @@ class DaftExpr(CompliantExpr["DaftLazyFrame", "Expression"]):
             version=self._version,
         )
 
+    def _reuse_series_inner(
+        self,
+        df: DaftLazyFrame,
+        *,
+        method_name: str,
+        returns_scalar: bool,
+        **kwargs: Any,
+        # not sure about this
+    ) -> Sequence[Expression]:
+        kwargs = {
+            name: df._evaluate_single_output_expr(value)
+            if self._is_expr(value)
+            else value
+            for name, value in kwargs.items()
+        }
+        method = op.methodcaller(
+            method_name,
+            **self._reuse_series_extra_kwargs(returns_scalar=returns_scalar),
+            **kwargs,
+        )
+        # not sure about this
+        out: Sequence[Expression] = [
+            series._from_scalar(method(series)) if returns_scalar else method(series)
+            for series in self(df)
+        ]
+        aliases, names = self._evaluate_aliases(df), (s.name for s in out)
+        if any(
+            alias != name for alias, name in zip_strict(aliases, names)
+        ):  # pragma: no cover
+            # TODO: adapt to daft??
+            msg = (
+                f"Safety assertion failed, please report a bug to https://github.com/narwhals-dev/narwhals/issues\n"
+                f"Expression aliases: {aliases}\n"
+            )
+            raise AssertionError(msg)
+        return out
+
+    def _reuse_series(
+        self, method_name: str, *, returns_scalar: bool = False, **kwargs: Any
+    ) -> DaftExpr:
+        """Reuse Series implementation for expression.
+
+        If Series.foo is already defined, and we'd like Expr.foo to be the same, we can
+        leverage this method to do that for us.
+
+        Arguments:
+            method_name: name of method.
+            returns_scalar: whether the Series version returns a scalar. In this case,
+                the expression version should return a 1-row Series.
+            kwargs: keyword arguments to pass to function.
+        """
+        func = partial(
+            self._reuse_series_inner,
+            method_name=method_name,
+            returns_scalar=returns_scalar,
+            **kwargs,
+        )
+        return self._from_callable(
+            func,
+            evaluate_output_names=self._evaluate_output_names,
+            alias_output_names=self._alias_output_names,
+            context=self,
+        )
+
     def __and__(self, other: DaftExpr) -> DaftExpr:
         return self._with_binary(lambda expr, other: (expr & other), other=other)
 
@@ -581,6 +664,11 @@ class DaftExpr(CompliantExpr["DaftLazyFrame", "Expression"]):
 
     def is_in(self, other: Sequence[Any]) -> DaftExpr:
         return self._with_elementwise(lambda _input: _input.is_in(other))
+
+    def filter(self, *predicates: DaftExpr) -> DaftExpr:
+        plx = self.__narwhals_namespace__()
+        predicate = plx.all_horizontal(*predicates, ignore_nulls=False)
+        return self._reuse_series("filter", predicate=predicate)
 
     def round(self, decimals: int) -> DaftExpr:
         return self._with_elementwise(lambda _input: _input.round(decimals))
@@ -867,7 +955,6 @@ class DaftExpr(CompliantExpr["DaftLazyFrame", "Expression"]):
         return ExprListNamespace(self)
 
     drop_nulls = not_implemented()
-    filter = not_implemented()
     ewm_mean = not_implemented()
     kurtosis = not_implemented()
     map_batches = not_implemented()
