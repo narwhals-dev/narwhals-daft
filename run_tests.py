@@ -39,8 +39,6 @@ TESTS_THAT_NEED_FIX = [
     "test_fill_null_strategies_with_partition_by",
     "test_filter",
     "test_filter_missing_column",
-    "test_filter_windows",
-    "test_filter_windows_over",
     "test_first_expr_over_order_by",
     "test_first_expr_over_order_by_partition_by",
     "test_format",
