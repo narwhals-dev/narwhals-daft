@@ -6,6 +6,7 @@ import daft
 import daft.exceptions
 import daft.functions as F
 from daft import Expression
+from narwhals._sql.dataframe import SQLLazyFrame
 from narwhals._utils import (
     Implementation,
     ValidateBackendVersion,
@@ -21,7 +22,6 @@ from narwhals.exceptions import (
     DuplicateError,
     MultiOutputExpressionError,
 )
-from narwhals.typing import CompliantLazyFrame
 
 from narwhals_daft.group_by import DaftLazyGroupBy
 from narwhals_daft.utils import evaluate_exprs, lit, native_to_narwhals_dtype
@@ -44,7 +44,7 @@ if TYPE_CHECKING:
 
 
 class DaftLazyFrame(
-    CompliantLazyFrame["DaftExpr", "daft.DataFrame", "LazyFrame[daft.DataFrame]"],
+    SQLLazyFrame["DaftExpr", "daft.DataFrame", "LazyFrame[daft.DataFrame]"],
     ValidateBackendVersion,
 ):
     _implementation = Implementation.UNKNOWN
@@ -193,7 +193,7 @@ class DaftLazyFrame(
         new_columns_map = dict(evaluate_exprs(self, *exprs))
         return self._with_native(self._native_frame.with_columns(new_columns_map))
 
-    def filter(self, predicate: DaftExpr) -> DaftLazyFrame:
+    def _filter(self, predicate: DaftExpr) -> DaftLazyFrame:
         # `[0]` is safe as the predicate's expression only returns a single column
         mask = predicate._call(self)[0]
         return self._with_native(self._native_frame.filter(mask))
