@@ -37,7 +37,7 @@ if TYPE_CHECKING:
     from narwhals.dataframe import LazyFrame
     from narwhals.dtypes import DType
     from narwhals.typing import JoinStrategy
-    from typing_extensions import Self, TypeIs
+    from typing_extensions import TypeIs
 
     from narwhals_daft.expr import DaftExpr, WindowInputs
     from narwhals_daft.namespace import DaftNamespace
@@ -198,7 +198,7 @@ class DaftLazyFrame(
         mask = predicate._call(self)[0]
         return self._with_native(self._native_frame.filter(mask))
 
-    def filter(self, predicate: DaftExpr) -> Self:
+    def filter(self, predicate: DaftExpr) -> DaftLazyFrame:
         if not predicate._metadata.is_elementwise:
             # add the temporary column, filter on it, then drop it
             tmp_col = generate_temporary_column_name(8, self.columns, prefix="filter")
