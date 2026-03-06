@@ -23,10 +23,10 @@ class ExprStringNamespace(StringNamespace["DaftExpr"]):
         return self._compliant
 
     def len_chars(self) -> DaftExpr:
-        return self.compliant._with_elementwise(lambda expr: F.length(expr))
+        return self.compliant._with_elementwise(F.length)
 
     def to_lowercase(self) -> DaftExpr:
-        return self.compliant._with_elementwise(lambda expr: F.lower(expr))
+        return self.compliant._with_elementwise(F.lower)
 
     def to_titlecase(self) -> DaftExpr:
         def _to_titlecase(expr: Expression) -> Expression:
@@ -40,7 +40,7 @@ class ExprStringNamespace(StringNamespace["DaftExpr"]):
         return self.compliant._with_elementwise(_to_titlecase)
 
     def to_uppercase(self) -> DaftExpr:
-        return self.compliant._with_elementwise(lambda expr: F.upper(expr))
+        return self.compliant._with_elementwise(F.upper)
 
     def to_date(self, format: str | None = None) -> DaftExpr:
         if format is None:

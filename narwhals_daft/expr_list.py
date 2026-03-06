@@ -25,13 +25,13 @@ class ExprListNamespace(ListNamespace["DaftExpr"]):
         return self.compliant._with_elementwise(lambda expr: F.list_count(expr, "all"))
 
     def min(self) -> DaftExpr:
-        return self.compliant._with_elementwise(lambda expr: F.list_min(expr))
+        return self.compliant._with_elementwise(F.list_min)
 
     def max(self) -> DaftExpr:
-        return self.compliant._with_elementwise(lambda expr: F.list_max(expr))
+        return self.compliant._with_elementwise(F.list_max)
 
     def mean(self) -> DaftExpr:
-        return self.compliant._with_elementwise(lambda expr: F.list_mean(expr))
+        return self.compliant._with_elementwise(F.list_mean)
 
     def sum(self) -> DaftExpr:
         def func(expr: Expression) -> Expression:

@@ -420,9 +420,7 @@ class DaftExpr(CompliantExpr["DaftLazyFrame", "Expression"]):
         )
 
     def __pow__(self, other: DaftExpr) -> DaftExpr:
-        return self._with_elementwise(
-            lambda _input, expr: F.pow(_input, expr), expr=other
-        )
+        return self._with_elementwise(F.pow, expr=other)
 
     def __rpow__(self, other: DaftExpr) -> DaftExpr:
         if other._metadata.is_literal:
