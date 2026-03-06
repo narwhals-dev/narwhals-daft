@@ -372,34 +372,34 @@ class DaftExpr(CompliantExpr["DaftLazyFrame", "Expression"]):
         )
 
     def __and__(self, other: DaftExpr) -> DaftExpr:
-        return self._with_binary(lambda expr, other: (expr & other), other=other)
+        return self._with_binary(lambda expr, other: expr & other, other=other)
 
     def __or__(self, other: DaftExpr) -> DaftExpr:
-        return self._with_binary(lambda expr, other: (expr | other), other=other)
+        return self._with_binary(lambda expr, other: expr | other, other=other)
 
     def __invert__(self) -> DaftExpr:
         invert = cast("Callable[..., Expression]", op.invert)
         return self._with_elementwise(invert)
 
     def __add__(self, other: DaftExpr) -> DaftExpr:
-        return self._with_binary(lambda expr, other: (expr + other), other)
+        return self._with_binary(lambda expr, other: expr + other, other)
 
     def __sub__(self, other: DaftExpr) -> DaftExpr:
-        return self._with_binary(lambda expr, other: (expr - other), other)
+        return self._with_binary(lambda expr, other: expr - other, other)
 
     def __rsub__(self, other: DaftExpr) -> DaftExpr:
-        return self._with_binary(lambda expr, other: (other - expr), other).alias(
+        return self._with_binary(lambda expr, other: other - expr, other).alias(
             "literal"
         )
 
     def __mul__(self, other: DaftExpr) -> DaftExpr:
-        return self._with_binary(lambda expr, other: (expr * other), other)
+        return self._with_binary(lambda expr, other: expr * other, other)
 
     def __truediv__(self, other: DaftExpr) -> DaftExpr:
-        return self._with_binary(lambda expr, other: (expr / other), other)
+        return self._with_binary(lambda expr, other: expr / other, other)
 
     def __rtruediv__(self, other: DaftExpr) -> DaftExpr:
-        return self._with_binary(lambda expr, other: (other / expr), other).alias(
+        return self._with_binary(lambda expr, other: other / expr, other).alias(
             "literal"
         )
 
@@ -412,42 +412,40 @@ class DaftExpr(CompliantExpr["DaftLazyFrame", "Expression"]):
         ).alias("literal")
 
     def __mod__(self, other: DaftExpr) -> DaftExpr:
-        return self._with_binary(lambda expr, other: (expr % other), other)
+        return self._with_binary(lambda expr, other: expr % other, other)
 
     def __rmod__(self, other: DaftExpr) -> DaftExpr:
-        return self._with_binary(lambda expr, other: (other % expr), other).alias(
+        return self._with_binary(lambda expr, other: other % expr, other).alias(
             "literal"
         )
 
     def __pow__(self, other: DaftExpr) -> DaftExpr:
-        return self._with_elementwise(
-            lambda _input, expr: F.pow(_input, expr), expr=other
-        )
+        return self._with_elementwise(F.pow, expr=other)
 
     def __rpow__(self, other: DaftExpr) -> DaftExpr:
         if other._metadata.is_literal:
             other_lit = evaluate_literal(other)
-            return self._with_callable(lambda expr: (other_lit**expr)).alias("literal")
+            return self._with_callable(lambda expr: other_lit**expr).alias("literal")
         msg = "`__rpow__` with non-literal input is not yet supported"
         raise NotImplementedError(msg)
 
     def __gt__(self, other: DaftExpr) -> DaftExpr:
-        return self._with_binary(lambda expr, other: (expr > other), other)
+        return self._with_binary(lambda expr, other: expr > other, other)
 
     def __ge__(self, other: DaftExpr) -> DaftExpr:
-        return self._with_binary(lambda expr, other: (expr >= other), other)
+        return self._with_binary(lambda expr, other: expr >= other, other)
 
     def __lt__(self, other: DaftExpr) -> DaftExpr:
-        return self._with_binary(lambda expr, other: (expr < other), other)
+        return self._with_binary(lambda expr, other: expr < other, other)
 
     def __le__(self, other: DaftExpr) -> DaftExpr:
-        return self._with_binary(lambda expr, other: (expr <= other), other)
+        return self._with_binary(lambda expr, other: expr <= other, other)
 
     def __eq__(self, other: DaftExpr) -> DaftExpr:
-        return self._with_binary(lambda expr, other: (expr == other), other)
+        return self._with_binary(lambda expr, other: expr == other, other)
 
     def __ne__(self, other: DaftExpr) -> DaftExpr:
-        return self._with_binary(lambda expr, other: (expr != other), other)
+        return self._with_binary(lambda expr, other: expr != other, other)
 
     def over(
         self, partition_by: Sequence[str | Expression], order_by: Sequence[str]
