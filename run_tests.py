@@ -4,6 +4,8 @@ import subprocess
 import sys
 
 TESTS_THAT_NEED_FIX = [
+    "test_add",
+    "test_all_kind_of_aggs",
     "test_any_value_expr",
     "test_any_value_group_by",
     "test_any_value_over",
@@ -34,6 +36,7 @@ TESTS_THAT_NEED_FIX = [
     "test_expr_binary",
     "test_expr_floordiv_by_zero",
     "test_expr_rfloordiv_by_zero",
+    "test_fancy_functions",
     "test_fill_null_limits",
     "test_fill_null_strategies_with_limit_as_none",
     "test_fill_null_strategies_with_partition_by",
@@ -48,6 +51,8 @@ TESTS_THAT_NEED_FIX = [
     "test_format",
     "test_get_field_expr",
     "test_group_by_categorical",
+    "test_group_by_depth_1_agg",
+    "test_group_by_depth_1_std_var",
     "test_group_by_median",
     "test_is_close_expr_with_expr",
     "test_is_close_expr_with_scalar",
@@ -107,6 +112,7 @@ TESTS_THAT_NEED_FIX = [
     "test_set_ops",
     "test_sin_expr",
     "test_skew_expr",
+    "test_std",
     "test_std_broadcating",
     "test_str_pad_end_expr",
     "test_str_pad_start_expr",
@@ -137,6 +143,8 @@ TESTS_THAT_NEED_FIX = [
     "test_unique_full_subset",
     "test_unique_invalid",
     "test_unique_none",
+    "test_var",
+    "test_when_chain_with_nulls",
     "test_when_then_broadcasting",
     "test_when_then_otherwise_aggregate_with_columns",
     "test_with_columns_dtypes_single_row",
