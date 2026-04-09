@@ -89,6 +89,7 @@ class DaftNamespace(CompliantNamespace[DaftLazyFrame, DaftExpr]):
         return first._with_native(res)
 
     concat_str = not_implemented()
+    corr = not_implemented()
 
     def all_horizontal(self, *exprs: DaftExpr, ignore_nulls: bool) -> DaftExpr:
         def func(cols: Iterable[Expression]) -> Expression:
