@@ -381,6 +381,10 @@ class DaftExpr(CompliantExpr["DaftLazyFrame", "Expression"]):
         invert = cast("Callable[..., Expression]", op.invert)
         return self._with_elementwise(invert)
 
+    def __neg__(self) -> DaftExpr:
+        neg = cast("Callable[..., Expression]", op.neg)
+        return self._with_elementwise(neg)
+
     def __add__(self, other: DaftExpr) -> DaftExpr:
         return self._with_binary(lambda expr, other: expr + other, other)
 
@@ -878,6 +882,7 @@ class DaftExpr(CompliantExpr["DaftLazyFrame", "Expression"]):
     last = not_implemented()
     cos = not_implemented()
     sin = not_implemented()
+    to_time = not_implemented()
 
     # namespaces
     cat = not_implemented()  # pyright: ignore[reportAssignmentType]

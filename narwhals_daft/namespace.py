@@ -88,8 +88,6 @@ class DaftNamespace(CompliantNamespace[DaftLazyFrame, DaftExpr]):
         res = reduce(lambda x, y: x.union(y), native_items)
         return first._with_native(res)
 
-    concat_str = not_implemented()
-
     def all_horizontal(self, *exprs: DaftExpr, ignore_nulls: bool) -> DaftExpr:
         def func(cols: Iterable[Expression]) -> Expression:
             it = (F.coalesce(col, lit(True)) for col in cols) if ignore_nulls else cols
@@ -186,3 +184,8 @@ class DaftNamespace(CompliantNamespace[DaftLazyFrame, DaftExpr]):
             return daft.functions.coalesce(*cols)
 
         return self._expr._from_elementwise_horizontal_op(func, *exprs)
+
+    concat_str = not_implemented()
+    corr = not_implemented()
+    cov = not_implemented()
+    struct = not_implemented()
