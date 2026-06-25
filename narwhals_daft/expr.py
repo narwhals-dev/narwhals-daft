@@ -520,7 +520,16 @@ class DaftExpr(CompliantExpr["DaftLazyFrame", "Expression"]):
         def f(expr: Expression) -> Expression:
             return F.coalesce(expr.sum(), lit(0))
 
-        return self._with_callable(f)
+        def window_f(df: DaftLazyFrame, inputs: WindowInputs) -> Sequence[Expression]:
+            assert not inputs.order_by  # noqa: S101
+            return [
+                F.coalesce(
+                    self._window_expression(expr.sum(), inputs.partition_by), lit(0)
+                )
+                for expr in self(df)
+            ]
+
+        return self._with_callable(f, window_f)
 
     def n_unique(self) -> DaftExpr:
         return self._with_callable(
