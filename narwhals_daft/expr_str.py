@@ -92,3 +92,4 @@ class ExprStringNamespace(StringNamespace["DaftExpr"]):
     zfill = not_implemented()
     pad_start = not_implemented()
     pad_end = not_implemented()
+    to_time = not_implemented()
