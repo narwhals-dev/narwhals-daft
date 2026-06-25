@@ -16,8 +16,9 @@ repos:
     - id: codespell
       files: \.(py|rst|md)$
       args: [--ignore-words-list=set]
-- repo: https://github.com/crate-ci/typos
-  rev: 'v1'
+- repo: https://github.com/adhtruong/mirrors-typos
+  # Use mirror to avoid autoupdate issue: https://github.com/crate-ci/typos/issues/390
+  rev: 'v1.46.0'
   hooks:
     - id: typos
 - repo: https://github.com/pre-commit/pre-commit-hooks

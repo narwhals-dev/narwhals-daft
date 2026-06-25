@@ -1,18 +1,34 @@
 from __future__ import annotations
 
+from collections.abc import Sequence
 from itertools import chain
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, TypeVar
 
-from narwhals._utils import is_sequence_of
 from narwhals.compliant import CompliantGroupBy
 
 if TYPE_CHECKING:
-    from collections.abc import Iterable, Iterator, Sequence
+    from collections.abc import Iterable, Iterator
 
     from daft import Expression
+    from typing_extensions import TypeIs
 
     from narwhals_daft.dataframe import DaftLazyFrame
     from narwhals_daft.expr import DaftExpr
+
+_T = TypeVar("_T")
+
+
+def is_sequence_but_not_str(sequence: Sequence[_T] | Any) -> TypeIs[Sequence[_T]]:
+    return isinstance(sequence, Sequence) and not isinstance(sequence, str)
+
+
+def is_sequence_of(obj: Any, tp: type[_T]) -> TypeIs[Sequence[_T]]:
+    # Check if an object is a sequence of `tp`, only sniffing the first element.
+    return bool(
+        is_sequence_but_not_str(obj)
+        and (first := next(iter(obj), None))
+        and isinstance(first, tp)
+    )
 
 
 def _evaluate_aliases_single(frame: DaftLazyFrame, expr: DaftExpr) -> Sequence[str]:
