@@ -86,7 +86,65 @@ class ExprStringNamespace(StringNamespace["DaftExpr"]):
             value=value,
         )
 
-    replace = not_implemented()
+    def replace(
+        self, value: DaftExpr, pattern: str, *, literal: bool, n: int
+    ) -> DaftExpr:
+        # `n` is the number of replacements: 1 = first occurrence, -1 (or
+        # negative) = all occurrences. Daft only has replace-all kernels, so
+        # implement first-`n` via find + substr reconstruction.
+        if n == 0:
+            return self.compliant
+        if n < 0:
+            return self.replace_all(value, pattern, literal=literal)
+        # Check for multivalue + n>1 which narwhals does not support.
+        # At compliant level `value` is always a DaftExpr (strs become lits),
+        # so detect literal via metadata: if it's a literal, allow n>1 by
+        # iterating; otherwise raise like other backends do.
+        is_literal_value = bool(
+            getattr(value, "_metadata", None) and value._metadata.is_literal
+        )  # type: ignore[union-attr]
+        if n > 1 and not is_literal_value:
+            msg = "'n > 1' not yet supported for multivalue replacement."
+            raise NotImplementedError(msg)
+
+        def _replace_once(expr: Expression, value: Expression) -> Expression:
+            expr_len = F.length(expr).cast("int64")
+            if literal:
+                idx = F.find(expr, pattern).cast("int64")
+                match_len = lit(len(pattern)).cast("int64")
+                suffix_start = idx + match_len
+                prefix = F.when(idx == lit(0), lit("")).otherwise(
+                    F.substr(expr, lit(0), idx)
+                )
+                suffix = F.when(suffix_start >= expr_len, lit("")).otherwise(
+                    F.substr(expr, suffix_start, expr_len)
+                )
+                return F.when(idx == lit(-1), expr).otherwise(
+                    F.when(expr.is_null() | idx.is_null(), expr).otherwise(
+                        prefix + value + suffix
+                    )
+                )
+            # Regex: extract first match, locate it, then splice.
+            match = F.regexp_extract(expr, pattern)
+            match_len = F.length(match).cast("int64")
+            idx = F.find(expr, match).cast("int64")
+            suffix_start = idx + match_len
+            prefix = F.when(idx == lit(0), lit("")).otherwise(
+                F.substr(expr, lit(0), idx)
+            )
+            suffix = F.when(suffix_start >= expr_len, lit("")).otherwise(
+                F.substr(expr, suffix_start, expr_len)
+            )
+            return F.when(match.is_null(), expr).otherwise(prefix + value + suffix)
+
+        result = self.compliant
+        for _ in range(n):
+            result = result._with_elementwise(
+                _replace_once,
+                value=value,  # type: ignore[arg-type]
+            )
+        return result
+
     contains = not_implemented()
     to_datetime = not_implemented()
     zfill = not_implemented()
