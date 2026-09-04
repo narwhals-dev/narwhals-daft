@@ -4,7 +4,6 @@ from typing import TYPE_CHECKING
 
 import daft.functions as F
 from daft import lit
-from narwhals._utils import not_implemented
 from narwhals.compliant import ListNamespace
 
 if TYPE_CHECKING:
@@ -76,4 +75,17 @@ class ExprListNamespace(ListNamespace["DaftExpr"]):
 
         return self.compliant._with_elementwise(func)
 
-    contains = not_implemented()
+    def contains(self, item: object) -> DaftExpr:
+        import daft
+
+        def func(expr: Expression) -> Expression:
+            # Use Python UDF to avoid strict type matching (e.g. Int64 item
+            # vs Int32 list) - `in` handles all cases including nulls.
+            def _contains(lst: object) -> bool | None:
+                if lst is None:
+                    return None
+                return item in lst  # type: ignore[operator]
+
+            return expr.apply(_contains, return_dtype=daft.DataType.bool())
+
+        return self.compliant._with_elementwise(func)
