@@ -97,7 +97,7 @@ class ExprStringNamespace(StringNamespace["DaftExpr"]):
         if n < 0:
             return self.replace_all(value, pattern, literal=literal)
         # Check for multivalue + n>1 which narwhals does not support.
-        # At compliant level `value` is always a DaftExpr (strs become lits),
+        # At compliant level `value` is always a DaftExpr (strs become list),
         # so detect literal via metadata: if it's a literal, allow n>1 by
         # iterating; otherwise raise like other backends do.
         is_literal_value = bool(
