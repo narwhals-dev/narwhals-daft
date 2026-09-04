@@ -185,7 +185,134 @@ class DaftNamespace(CompliantNamespace[DaftLazyFrame, DaftExpr]):
 
         return self._expr._from_elementwise_horizontal_op(func, *exprs)
 
-    concat_str = not_implemented()
-    corr = not_implemented()
-    cov = not_implemented()
+    def concat_str(
+        self, *exprs: DaftExpr, separator: str, ignore_nulls: bool
+    ) -> DaftExpr:
+        def func(df: DaftLazyFrame) -> list[Expression]:
+            cols = [e for expr in exprs for e in expr(df)]
+            str_cols = [c.cast(daft.DataType.string()) for c in cols]
+            result = F.concat_ws(separator, *str_cols)
+            if not ignore_nulls:
+                null_mask = reduce(operator.or_, (c.is_null() for c in cols))
+                result = F.when(null_mask, lit(None)).otherwise(result)
+            return [result]
+
+        from narwhals._expression_parsing import (
+            combine_alias_output_names,
+            combine_evaluate_output_names,
+        )
+
+        return self._expr(
+            func,
+            evaluate_output_names=combine_evaluate_output_names(*exprs),
+            alias_output_names=combine_alias_output_names(*exprs),
+            version=self._version,
+        )
+
+    def _corr_cov_eval(
+        self,
+        a: Expression,
+        b: Expression,
+        *,
+        ddof: int | None,
+        is_corr: bool,
+        wrap: object = None,
+    ) -> Expression:
+        # Pairwise null handling: only rows where both are non-null count.
+        # `wrap` windows each aggregate for `over` contexts (identity otherwise).
+        def _wrap(e: Expression) -> Expression:
+            return wrap(e) if wrap is not None else e  # type: ignore[operator]
+
+        valid = a.not_null() & b.not_null()
+        a_v = F.when(valid, a).otherwise(lit(None)).cast(daft.DataType.float64())
+        b_v = F.when(valid, b).otherwise(lit(None)).cast(daft.DataType.float64())
+        n = _wrap(F.when(valid, lit(1)).otherwise(lit(0)).sum()).cast(
+            daft.DataType.float64()
+        )
+        sum_a = _wrap(a_v.sum())
+        sum_b = _wrap(b_v.sum())
+        sum_ab = _wrap((a_v * b_v).sum())
+        sum_a2 = _wrap((a_v * a_v).sum())
+        sum_b2 = _wrap((b_v * b_v).sum())
+        if is_corr:
+            numerator = n * sum_ab - sum_a * sum_b
+            denom_a = n * sum_a2 - sum_a * sum_a
+            denom_b = n * sum_b2 - sum_b * sum_b
+            denom = (denom_a * denom_b).sqrt()
+            return F.when((denom == lit(0)) | denom.is_null(), lit(None)).otherwise(
+                numerator / denom
+            )
+        assert ddof is not None  # noqa: S101
+        denominator = n - lit(float(ddof))
+        cov = (sum_ab - sum_a * sum_b / n) / denominator
+        return F.when(denominator <= lit(0), lit(None)).otherwise(cov)
+
+    def corr(self, a: DaftExpr, b: DaftExpr, *, method: str) -> DaftExpr:
+        if method != "pearson":
+            msg = "Only 'pearson' correlation is supported for Daft."
+            raise NotImplementedError(msg)
+
+        from narwhals._expression_parsing import (
+            combine_alias_output_names,
+            combine_evaluate_output_names,
+        )
+
+        def func(df: DaftLazyFrame) -> list[Expression]:
+            a_ = df._evaluate_expr(a)
+            b_ = df._evaluate_expr(b)
+            return [self._corr_cov_eval(a_, b_, ddof=None, is_corr=True)]
+
+        def window_func(df: DaftLazyFrame, inputs: WindowInputs) -> list[Expression]:
+            from daft import Window
+
+            assert not inputs.order_by  # noqa: S101
+            window = Window().partition_by(*inputs.partition_by)
+            a_ = df._evaluate_expr(a)
+            b_ = df._evaluate_expr(b)
+            return [
+                self._corr_cov_eval(
+                    a_, b_, ddof=None, is_corr=True, wrap=lambda e: e.over(window)
+                )
+            ]
+
+        return self._expr(
+            func,
+            window_func,
+            evaluate_output_names=combine_evaluate_output_names(a, b),
+            alias_output_names=combine_alias_output_names(a, b),
+            version=self._version,
+        )
+
+    def cov(self, a: DaftExpr, b: DaftExpr, *, ddof: int) -> DaftExpr:
+        from narwhals._expression_parsing import (
+            combine_alias_output_names,
+            combine_evaluate_output_names,
+        )
+
+        def func(df: DaftLazyFrame) -> list[Expression]:
+            a_ = df._evaluate_expr(a)
+            b_ = df._evaluate_expr(b)
+            return [self._corr_cov_eval(a_, b_, ddof=ddof, is_corr=False)]
+
+        def window_func(df: DaftLazyFrame, inputs: WindowInputs) -> list[Expression]:
+            from daft import Window
+
+            assert not inputs.order_by  # noqa: S101
+            window = Window().partition_by(*inputs.partition_by)
+            a_ = df._evaluate_expr(a)
+            b_ = df._evaluate_expr(b)
+            return [
+                self._corr_cov_eval(
+                    a_, b_, ddof=ddof, is_corr=False, wrap=lambda e: e.over(window)
+                )
+            ]
+
+        return self._expr(
+            func,
+            window_func,
+            evaluate_output_names=combine_evaluate_output_names(a, b),
+            alias_output_names=combine_alias_output_names(a, b),
+            version=self._version,
+        )
+
     struct = not_implemented()
