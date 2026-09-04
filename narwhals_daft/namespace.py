@@ -188,4 +188,32 @@ class DaftNamespace(CompliantNamespace[DaftLazyFrame, DaftExpr]):
     concat_str = not_implemented()
     corr = not_implemented()
     cov = not_implemented()
-    struct = not_implemented()
+
+    def struct(self, *exprs: DaftExpr) -> DaftExpr:
+        from narwhals._expression_parsing import (
+            combine_alias_output_names,
+            combine_evaluate_output_names,
+            evaluate_output_names_and_aliases,
+        )
+
+        def func(df: DaftLazyFrame) -> list[Expression]:
+            import daft.functions.struct as _struct
+
+            names_to_cols = {
+                alias: native_expr
+                for expr in exprs
+                for native_expr, _, alias in zip(
+                    expr(df),
+                    *evaluate_output_names_and_aliases(expr, df, []),
+                    strict=True,
+                )
+            }
+            aliased = [col.alias(name) for name, col in names_to_cols.items()]
+            return [_struct.to_struct(*aliased)]
+
+        return self._expr(
+            func,
+            evaluate_output_names=combine_evaluate_output_names(*exprs),
+            alias_output_names=combine_alias_output_names(*exprs),
+            version=self._version,
+        )
