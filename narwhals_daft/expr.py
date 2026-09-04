@@ -623,6 +623,59 @@ class DaftExpr(CompliantExpr["DaftLazyFrame", "Expression"]):
     def skew(self) -> DaftExpr:
         return self._with_callable(lambda expr: expr.skew())
 
+    def median(self) -> DaftExpr:
+        def func(expr: Expression) -> Expression:
+            return expr.median()
+
+        def window_func(
+            df: DaftLazyFrame, inputs: WindowInputs
+        ) -> Sequence[Expression]:
+            assert not inputs.order_by  # noqa: S101
+            return [
+                self._window_expression(expr.median(), inputs.partition_by)
+                for expr in self(df)
+            ]
+
+        return self._with_callable(func, window_func)
+
+    def quantile(self, quantile: float, interpolation: str) -> DaftExpr:
+        if interpolation != "linear":
+            msg = "Only linear interpolation is supported for Daft quantile."
+            raise NotImplementedError(msg)
+
+        def func(expr: Expression) -> Expression:
+            return F.percentile(expr, quantile)
+
+        def window_func(
+            df: DaftLazyFrame, inputs: WindowInputs
+        ) -> Sequence[Expression]:
+            assert not inputs.order_by  # noqa: S101
+            return [
+                self._window_expression(
+                    F.percentile(expr, quantile), inputs.partition_by
+                )
+                for expr in self(df)
+            ]
+
+        return self._with_callable(func, window_func)
+
+    def any_value(self, *, ignore_nulls: bool) -> DaftExpr:
+        def func(expr: Expression) -> Expression:
+            return F.any_value(expr, ignore_nulls=ignore_nulls)
+
+        def window_func(
+            df: DaftLazyFrame, inputs: WindowInputs
+        ) -> Sequence[Expression]:
+            assert not inputs.order_by  # noqa: S101
+            return [
+                self._window_expression(
+                    F.any_value(expr, ignore_nulls=ignore_nulls), inputs.partition_by
+                )
+                for expr in self(df)
+            ]
+
+        return self._with_callable(func, window_func)
+
     @classmethod
     def _is_expr(cls, obj: DaftExpr) -> TypeIs[DaftExpr]:
         return hasattr(obj, "__narwhals_expr__")
@@ -882,9 +935,7 @@ class DaftExpr(CompliantExpr["DaftLazyFrame", "Expression"]):
     ewm_mean = not_implemented()
     kurtosis = not_implemented()
     map_batches = not_implemented()
-    median = not_implemented()
     mode = not_implemented()
-    quantile = not_implemented()
     replace_strict = not_implemented()
     unique = not_implemented()
     first = not_implemented()
@@ -896,4 +947,3 @@ class DaftExpr(CompliantExpr["DaftLazyFrame", "Expression"]):
     # namespaces
     cat = not_implemented()  # pyright: ignore[reportAssignmentType]
     struct = not_implemented()  # pyright: ignore[reportAssignmentType]
-    any_value = not_implemented()
