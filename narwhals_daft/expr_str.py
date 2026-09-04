@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+import daft
 import daft.functions as F
 from daft import lit
 from daft.expressions import col
@@ -88,8 +89,24 @@ class ExprStringNamespace(StringNamespace["DaftExpr"]):
 
     replace = not_implemented()
     contains = not_implemented()
-    to_datetime = not_implemented()
     zfill = not_implemented()
     pad_start = not_implemented()
     pad_end = not_implemented()
-    to_time = not_implemented()
+
+    def to_datetime(self, format: str | None) -> DaftExpr:
+        if format is None:
+            # Infer format via cast (Daft requires explicit format for
+            # `to_datetime`, but cast handles ISO variants).
+            return self.compliant._with_elementwise(
+                lambda expr: expr.cast(daft.DataType.timestamp("us"))
+            )
+        return self.compliant._with_elementwise(
+            lambda expr: F.to_datetime(expr, format)
+        )
+
+    def to_time(self, format: str | None) -> DaftExpr:
+        # Daft parses time strings via cast; format is accepted for API
+        # compatibility but cast handles the standard cases.
+        return self.compliant._with_elementwise(
+            lambda expr: expr.cast(daft.DataType.time("ns"))
+        )
