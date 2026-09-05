@@ -345,6 +345,30 @@ class DaftExpr(CompliantExpr["DaftLazyFrame", "Expression"]):
             version=self._version,
         )
 
+    def _with_elementwise_frame(
+        self, call: Callable[[DaftLazyFrame, Expression], Expression], /
+    ) -> DaftExpr:
+        """Like `_with_elementwise`, but `call` also receives the frame.
+
+        Useful when building the native expression needs the frame's schema.
+        """
+
+        def func(df: DaftLazyFrame) -> list[Expression]:
+            return [call(df, expr) for expr in self(df)]
+
+        def window_function(
+            df: DaftLazyFrame, window_inputs: WindowInputs
+        ) -> list[Expression]:
+            return [call(df, expr) for expr in self.window_function(df, window_inputs)]
+
+        return self.__class__(
+            func,
+            window_function,
+            evaluate_output_names=self._evaluate_output_names,
+            alias_output_names=self._alias_output_names,
+            version=self._version,
+        )
+
     def _with_binary(self, op: Callable[..., Expression], other: DaftExpr) -> DaftExpr:
         return self.__class__(
             self._callable_to_eval_series(op, other=other),

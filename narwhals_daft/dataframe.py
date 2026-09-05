@@ -112,6 +112,11 @@ class DaftLazyFrame(
             raise MultiOutputExpressionError(msg)
         return result[0]
 
+    def _native_dtype(self, expr: Expression) -> daft.DataType:
+        """Resolve the dtype of `expr` against this frame's schema without executing it."""
+        name = generate_temporary_column_name(8, self.columns)
+        return self.native.select(expr.alias(name)).schema()[name].dtype
+
     @property
     def columns(self) -> list[str]:
         if self._cached_columns is None:
