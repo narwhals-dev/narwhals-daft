@@ -24,7 +24,7 @@ if TYPE_CHECKING:
     from daft import Expression
     from narwhals._utils import Version, _LimitedContext
     from narwhals.dtypes import DType
-    from narwhals.typing import RankMethod
+    from narwhals.typing import RankMethod, RollingInterpolationMethod
     from typing_extensions import TypeIs
 
     from narwhals_daft.dataframe import DaftLazyFrame
@@ -623,6 +623,22 @@ class DaftExpr(CompliantExpr["DaftLazyFrame", "Expression"]):
     def skew(self) -> DaftExpr:
         return self._with_callable(lambda expr: expr.skew())
 
+    def median(self) -> DaftExpr:
+        return self._with_callable(F.median)
+
+    def quantile(
+        self, quantile: float, interpolation: RollingInterpolationMethod
+    ) -> DaftExpr:
+        if interpolation != "linear":
+            msg = "Only linear interpolation is supported for Daft quantile."
+            raise NotImplementedError(msg)
+        return self._with_callable(lambda expr: F.percentile(expr, quantile))
+
+    def any_value(self, *, ignore_nulls: bool) -> DaftExpr:
+        return self._with_callable(
+            lambda expr: F.any_value(expr, ignore_nulls=ignore_nulls)
+        )
+
     @classmethod
     def _is_expr(cls, obj: DaftExpr) -> TypeIs[DaftExpr]:
         return hasattr(obj, "__narwhals_expr__")
@@ -882,9 +898,7 @@ class DaftExpr(CompliantExpr["DaftLazyFrame", "Expression"]):
     ewm_mean = not_implemented()
     kurtosis = not_implemented()
     map_batches = not_implemented()
-    median = not_implemented()
     mode = not_implemented()
-    quantile = not_implemented()
     replace_strict = not_implemented()
     unique = not_implemented()
     first = not_implemented()
@@ -896,4 +910,3 @@ class DaftExpr(CompliantExpr["DaftLazyFrame", "Expression"]):
     # namespaces
     cat = not_implemented()  # pyright: ignore[reportAssignmentType]
     struct = not_implemented()  # pyright: ignore[reportAssignmentType]
-    any_value = not_implemented()
