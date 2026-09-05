@@ -1,16 +1,25 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 import daft
+import daft.exceptions
 from daft import DataType
 from narwhals._utils import isinstance_or_issubclass
+from narwhals.exceptions import (
+    ColumnNotFoundError,
+    ComputeError,
+    DuplicateError,
+    InvalidOperationError,
+    NarwhalsError,
+)
 
 if TYPE_CHECKING:
     from collections.abc import Iterable, Sequence
 
     from narwhals._utils import Version
     from narwhals.dtypes import DType
+    from narwhals.typing import TimeUnit
 
     from narwhals_daft.dataframe import DaftLazyFrame
     from narwhals_daft.expr import DaftExpr
@@ -62,12 +71,15 @@ def native_to_narwhals_dtype(daft_dtype: DataType, version: Version) -> DType:  
         return dtypes.String()
     if daft_dtype == DataType.date():
         return dtypes.Date()
-    if daft_dtype == DataType.timestamp("us", None):
-        return dtypes.Datetime("us", None)
+    if daft_dtype.is_timestamp():
+        time_unit = cast("TimeUnit", str(daft_dtype.timeunit))
+        return dtypes.Datetime(time_unit, daft_dtype.timezone)
     if daft_dtype == DataType.bool():
         return dtypes.Boolean()
-    if daft_dtype == DataType.duration("us"):
-        return dtypes.Duration("us")
+    if daft_dtype.is_duration():
+        return dtypes.Duration(cast("TimeUnit", str(daft_dtype.timeunit)))
+    if daft_dtype.is_time():
+        return dtypes.Time()
     if daft_dtype == DataType.decimal128(1, 1):  # pragma: no cover
         return dtypes.Decimal()
     if DataType.is_fixed_size_list(daft_dtype):
@@ -160,3 +172,23 @@ def extend_bool(
 
 def evaluate_literal(expr: DaftExpr) -> object:
     return next(expr._metadata.op_nodes_reversed()).kwargs["value"]
+
+
+def catch_daft_exception(
+    exception: Exception, frame: DaftLazyFrame, /
+) -> NarwhalsError | Exception:
+    """Translate a Daft exception into its narwhals counterpart, keeping the message."""
+    if not isinstance(exception, daft.exceptions.DaftCoreException):
+        return exception  # pragma: no cover
+    msg = str(exception)
+    if "not found" in msg:
+        return ColumnNotFoundError(
+            f"{msg}\n\nHint: Did you mean one of these columns: {frame.columns}?"
+        )
+    if "duplicate" in msg.lower():
+        return DuplicateError(msg)
+    if "TypeError" in msg:
+        return InvalidOperationError(msg)
+    if "ComputeError" in msg:
+        return ComputeError(msg)
+    return NarwhalsError(msg)

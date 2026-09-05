@@ -16,15 +16,16 @@ from narwhals._utils import (
     not_implemented,
     parse_columns_to_drop,
 )
-from narwhals.exceptions import (
-    ColumnNotFoundError,
-    DuplicateError,
-    MultiOutputExpressionError,
-)
+from narwhals.exceptions import MultiOutputExpressionError
 from narwhals.typing import CompliantLazyFrame
 
 from narwhals_daft.group_by import DaftLazyGroupBy
-from narwhals_daft.utils import evaluate_exprs, lit, native_to_narwhals_dtype
+from narwhals_daft.utils import (
+    catch_daft_exception,
+    evaluate_exprs,
+    lit,
+    native_to_narwhals_dtype,
+)
 
 if TYPE_CHECKING:
     from collections.abc import Iterable, Iterator, Mapping, Sequence
@@ -125,36 +126,41 @@ class DaftLazyFrame(
     def collect(
         self, backend: ModuleType | Implementation | str | None, **kwargs: Any
     ) -> CompliantDataFrame[Any, Any, Any, Any]:
-        if backend is None or backend is Implementation.PYARROW:
-            from narwhals._arrow.dataframe import ArrowDataFrame
+        try:
+            if backend is None or backend is Implementation.PYARROW:
+                from narwhals._arrow.dataframe import ArrowDataFrame
 
-            return ArrowDataFrame(
-                native_dataframe=self._native_frame.to_arrow(),
-                validate_backend_version=True,
-                version=self._version,
-                validate_column_names=True,
-            )
+                return ArrowDataFrame(
+                    native_dataframe=self._native_frame.to_arrow(),
+                    validate_backend_version=True,
+                    version=self._version,
+                    validate_column_names=True,
+                )
 
-        if backend is Implementation.PANDAS:
-            from narwhals._pandas_like.dataframe import PandasLikeDataFrame
+            if backend is Implementation.PANDAS:
+                from narwhals._pandas_like.dataframe import PandasLikeDataFrame
 
-            return PandasLikeDataFrame(
-                native_dataframe=self._native_frame.to_pandas(),
-                implementation=Implementation.PANDAS,
-                validate_backend_version=True,
-                version=self._version,
-                validate_column_names=True,
-            )
+                return PandasLikeDataFrame(
+                    native_dataframe=self._native_frame.to_pandas(),
+                    implementation=Implementation.PANDAS,
+                    validate_backend_version=True,
+                    version=self._version,
+                    validate_column_names=True,
+                )
 
-        if backend is Implementation.POLARS:
-            import polars as pl  # ignore-banned-import
-            from narwhals._polars.dataframe import PolarsDataFrame
+            if backend is Implementation.POLARS:
+                import polars as pl  # ignore-banned-import
+                from narwhals._polars.dataframe import PolarsDataFrame
 
-            return PolarsDataFrame(
-                df=cast("pl.DataFrame", pl.from_arrow(self._native_frame.to_arrow())),
-                validate_backend_version=True,
-                version=self._version,
-            )
+                return PolarsDataFrame(
+                    df=cast(
+                        "pl.DataFrame", pl.from_arrow(self._native_frame.to_arrow())
+                    ),
+                    validate_backend_version=True,
+                    version=self._version,
+                )
+        except daft.exceptions.DaftCoreException as e:
+            raise catch_daft_exception(e, self) from None
 
         msg = f"Unsupported `backend` value: {backend}"  # pragma: no cover
         raise ValueError(msg)  # pragma: no cover
@@ -164,9 +170,12 @@ class DaftLazyFrame(
 
     def aggregate(self, *exprs: DaftExpr) -> DaftLazyFrame:
         new_columns_map = evaluate_exprs(self, *exprs)
-        return self._with_native(
-            self._native_frame.agg([val.alias(col) for col, val in new_columns_map])
-        )
+        try:
+            return self._with_native(
+                self._native_frame.agg([val.alias(col) for col, val in new_columns_map])
+            )
+        except daft.exceptions.DaftCoreException as e:
+            raise catch_daft_exception(e, self) from None
 
     def select(self, *exprs: DaftExpr) -> DaftLazyFrame:
         new_columns_map = evaluate_exprs(self, *exprs)
@@ -180,23 +189,22 @@ class DaftLazyFrame(
                 )
             )
         except daft.exceptions.DaftCoreException as e:
-            if "duplicate" in str(e):  # pragma: no cover
-                raise DuplicateError(e) from None
-            if "not found" in str(e):
-                msg = (
-                    f"{e!s}\n\nHint: Did you mean one of these columns: {self.columns}?"
-                )
-                raise ColumnNotFoundError(msg) from e
-            raise
+            raise catch_daft_exception(e, self) from None
 
     def with_columns(self, *exprs: DaftExpr) -> DaftLazyFrame:
         new_columns_map = dict(evaluate_exprs(self, *exprs))
-        return self._with_native(self._native_frame.with_columns(new_columns_map))
+        try:
+            return self._with_native(self._native_frame.with_columns(new_columns_map))
+        except daft.exceptions.DaftCoreException as e:
+            raise catch_daft_exception(e, self) from None
 
     def _filter(self, predicate: DaftExpr) -> DaftLazyFrame:
         # `[0]` is safe as the predicate's expression only returns a single column
         mask = predicate._call(self)[0]
-        return self._with_native(self._native_frame.filter(mask))
+        try:
+            return self._with_native(self._native_frame.filter(mask))
+        except daft.exceptions.DaftCoreException as e:
+            raise catch_daft_exception(e, self) from None
 
     def filter(self, predicate: DaftExpr) -> DaftLazyFrame:
         if not predicate._metadata.is_elementwise:

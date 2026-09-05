@@ -4,7 +4,10 @@ from collections.abc import Sequence
 from itertools import chain
 from typing import TYPE_CHECKING, Any, TypeVar
 
+import daft.exceptions
 from narwhals.compliant import CompliantGroupBy
+
+from narwhals_daft.utils import catch_daft_exception
 
 if TYPE_CHECKING:
     from collections.abc import Iterable, Iterator
@@ -136,11 +139,14 @@ class DaftLazyGroupBy(ParseKeysGroupBy, CompliantGroupBy["DaftLazyFrame", "DaftE
             yield from self._evaluate_expr(expr)
 
     def agg(self, *exprs: DaftExpr) -> DaftLazyFrame:
-        result = (
-            self.compliant.native.groupby(*self._keys).agg(*agg_columns)
-            if (agg_columns := tuple(self._evaluate_exprs(exprs)))
-            else self.compliant.native.select(*self._keys).drop_duplicates()
-        )
+        try:
+            result = (
+                self.compliant.native.groupby(*self._keys).agg(*agg_columns)
+                if (agg_columns := tuple(self._evaluate_exprs(exprs)))
+                else self.compliant.native.select(*self._keys).drop_duplicates()
+            )
+        except daft.exceptions.DaftCoreException as e:
+            raise catch_daft_exception(e, self.compliant) from None
 
         return self.compliant._with_native(result).rename(
             dict(zip(self._keys, self._output_key_names, strict=True))
