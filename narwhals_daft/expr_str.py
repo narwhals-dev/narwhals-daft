@@ -50,11 +50,11 @@ class ExprStringNamespace(StringNamespace["DaftExpr"]):
     def split(self, by: str) -> DaftExpr:
         return self.compliant._with_elementwise(lambda expr: F.split(expr, by))
 
-    def starts_with(self, prefix: str) -> DaftExpr:
-        return self.compliant._with_elementwise(lambda expr: F.startswith(expr, prefix))
+    def starts_with(self, prefix: DaftExpr) -> DaftExpr:
+        return self.compliant._with_elementwise(F.startswith, prefix=prefix)
 
-    def ends_with(self, suffix: str) -> DaftExpr:
-        return self.compliant._with_elementwise(lambda expr: F.endswith(expr, suffix))
+    def ends_with(self, suffix: DaftExpr) -> DaftExpr:
+        return self.compliant._with_elementwise(F.endswith, suffix=suffix)
 
     def slice(self, offset: int, length: int | None = None) -> DaftExpr:
         def func(expr: Expression) -> Expression:
@@ -86,10 +86,54 @@ class ExprStringNamespace(StringNamespace["DaftExpr"]):
             value=value,
         )
 
+    def contains(self, pattern: DaftExpr, *, literal: bool) -> DaftExpr:
+        if literal:
+            return self.compliant._with_elementwise(F.contains, substr=pattern)
+        return self.compliant._with_elementwise(F.regexp, pattern=pattern)
+
+    def zfill(self, width: int) -> DaftExpr:
+        if width <= 0:
+            return self.compliant
+
+        def func(expr: Expression) -> Expression:
+            less_than_width = F.length(expr) < lit(width)
+            sign = F.left(expr, 1)
+            has_sign = (sign == lit("-")) | (sign == lit("+"))
+            # `substr` yields null rather than "" once the offset reaches the end.
+            digits = F.substr(expr, 1).fill_null("")
+            return (
+                F.when(
+                    less_than_width & has_sign,
+                    F.concat(sign, F.lpad(digits, width - 1, "0")),
+                )
+                .when(less_than_width, F.lpad(expr, width, "0"))
+                .otherwise(expr)
+            )
+
+        return self.compliant._with_elementwise(func)
+
+    def _pad(self, length: int, fill_char: str, *, start: bool) -> DaftExpr:
+        if len(fill_char) != 1:
+            msg = f"expected a string of length 1 as `fill_char`, got {fill_char!r}"
+            raise ValueError(msg)
+        if length <= 0:
+            return self.compliant
+        pad = F.lpad if start else F.rpad
+
+        def func(expr: Expression) -> Expression:
+            # `lpad`/`rpad` truncate strings longer than `length`.
+            return F.when(
+                F.length(expr) < lit(length), pad(expr, length, fill_char)
+            ).otherwise(expr)
+
+        return self.compliant._with_elementwise(func)
+
+    def pad_start(self, length: int, fill_char: str) -> DaftExpr:
+        return self._pad(length, fill_char, start=True)
+
+    def pad_end(self, length: int, fill_char: str) -> DaftExpr:
+        return self._pad(length, fill_char, start=False)
+
     replace = not_implemented()
-    contains = not_implemented()
     to_datetime = not_implemented()
-    zfill = not_implemented()
-    pad_start = not_implemented()
-    pad_end = not_implemented()
     to_time = not_implemented()
