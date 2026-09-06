@@ -103,6 +103,13 @@ class DaftLazyFrame(
         assert len(result) == 1  # debug assertion  # noqa: S101
         return result[0]
 
+    def _evaluate_single_output_expr(self, expr: DaftExpr, /) -> Expression:
+        result = expr(self)
+        if len(result) != 1:
+            msg = "multi-output expressions not allowed in this context"
+            raise MultiOutputExpressionError(msg)
+        return result[0]
+
     def _evaluate_window_expr(
         self, expr: DaftExpr, /, window_inputs: WindowInputs
     ) -> Expression:
