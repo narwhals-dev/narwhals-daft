@@ -7,7 +7,16 @@ from typing import TYPE_CHECKING, Any
 
 import daft
 import daft.functions as F
-from narwhals._utils import Implementation, not_implemented
+from narwhals._expression_parsing import (
+    combine_alias_output_names,
+    combine_evaluate_output_names,
+    evaluate_output_names_and_aliases,
+)
+from narwhals._utils import (
+    Implementation,
+    check_column_names_are_unique,
+    not_implemented,
+)
 from narwhals.compliant import CompliantNamespace
 
 from narwhals_daft.dataframe import DaftLazyFrame
@@ -188,4 +197,27 @@ class DaftNamespace(CompliantNamespace[DaftLazyFrame, DaftExpr]):
     concat_str = not_implemented()
     corr = not_implemented()
     cov = not_implemented()
-    struct = not_implemented()
+
+    def struct(self, *exprs: DaftExpr) -> DaftExpr:
+        def func(df: DaftLazyFrame) -> list[Expression]:
+            names_and_fields = [
+                (alias, native_expr)
+                for expr in exprs
+                for native_expr, _, alias in zip(
+                    expr(df),
+                    *evaluate_output_names_and_aliases(expr, df, []),
+                    strict=True,
+                )
+            ]
+            # Daft silently keeps the last field for a repeated name, Polars raises.
+            check_column_names_are_unique([name for name, _ in names_and_fields])
+            return [
+                F.to_struct(*(field.alias(name) for name, field in names_and_fields))
+            ]
+
+        return self._expr(
+            func,
+            evaluate_output_names=combine_evaluate_output_names(*exprs),
+            alias_output_names=combine_alias_output_names(*exprs),
+            version=self._version,
+        )

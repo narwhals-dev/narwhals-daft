@@ -74,6 +74,15 @@ def native_to_narwhals_dtype(daft_dtype: DataType, version: Version) -> DType:  
         return dtypes.Array(
             native_to_narwhals_dtype(daft_dtype.dtype, version), daft_dtype.size
         )
+    if DataType.is_list(daft_dtype):
+        return dtypes.List(native_to_narwhals_dtype(daft_dtype.dtype, version))
+    if DataType.is_struct(daft_dtype):
+        return dtypes.Struct(
+            [
+                dtypes.Field(name, native_to_narwhals_dtype(dtype, version))
+                for name, dtype in daft_dtype.fields.items()
+            ]
+        )
     return dtypes.Unknown()  # pragma: no cover
 
 
