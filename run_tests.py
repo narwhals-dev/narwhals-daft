@@ -30,7 +30,6 @@ TESTS_THAT_NEED_FIX = [
     "test_concat_str_with_lit",
     "test_concat_str_with_lit_and_nulls",
     "test_concat_vertical",
-    "test_contains_expr",
     "test_convert_time_zone",
     "test_convert_time_zone_from_none",
     "test_corr_constant_column",
