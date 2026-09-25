@@ -1,22 +1,44 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import daft
 from daft import DataType
 from narwhals._utils import isinstance_or_issubclass
 
 if TYPE_CHECKING:
-    from collections.abc import Iterable, Sequence
+    from collections.abc import Iterable, Mapping, Sequence
 
     from narwhals._utils import Version
     from narwhals.dtypes import DType
+    from narwhals.typing import NormalizedPath, NormalizedSource
 
     from narwhals_daft.dataframe import DaftLazyFrame
     from narwhals_daft.expr import DaftExpr
 
 lit = daft.lit
 """Alias for `daft.lit`."""
+
+
+def validate_separator(separator: str, kwds: Mapping[str, Any], /) -> None:
+    """Ensure `separator` does not conflict with Daft's native `delimiter` in `kwds`."""
+    if "delimiter" in kwds and kwds["delimiter"] != separator:
+        msg = (
+            "`separator` and `delimiter` do not match: "
+            f"`separator`={separator} and `delimiter`={kwds['delimiter']}."
+        )
+        raise TypeError(msg)
+
+
+def ensure_path_source(source: NormalizedSource, /) -> NormalizedPath:
+    """Reject file-like objects, as Daft's readers require a path."""
+    if not isinstance(source, str):
+        msg = (
+            "Reading from a file-like object is not supported for the daft backend.\n\n"
+            "Hint: use 'pandas', 'polars' or 'pyarrow', or write the buffer to a file first."
+        )
+        raise TypeError(msg)
+    return source
 
 
 def evaluate_exprs(
