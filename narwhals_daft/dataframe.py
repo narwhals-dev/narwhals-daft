@@ -19,6 +19,7 @@ from narwhals._utils import (
 from narwhals.exceptions import (
     ColumnNotFoundError,
     DuplicateError,
+    InvalidOperationError,
     MultiOutputExpressionError,
 )
 from narwhals.typing import CompliantLazyFrame
@@ -112,6 +113,11 @@ class DaftLazyFrame(
             raise MultiOutputExpressionError(msg)
         return result[0]
 
+    def _native_dtype(self, expr: Expression) -> daft.DataType:
+        """Resolve the dtype of `expr` against this frame's schema without executing it."""
+        name = generate_temporary_column_name(8, self.columns)
+        return self.native.select(expr.alias(name)).schema()[name].dtype
+
     @property
     def columns(self) -> list[str]:
         if self._cached_columns is None:
@@ -187,6 +193,8 @@ class DaftLazyFrame(
                     f"{e!s}\n\nHint: Did you mean one of these columns: {self.columns}?"
                 )
                 raise ColumnNotFoundError(msg) from e
+            if "TypeError" in str(e):
+                raise InvalidOperationError(str(e)) from None
             raise
 
     def with_columns(self, *exprs: DaftExpr) -> DaftLazyFrame:

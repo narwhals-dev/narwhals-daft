@@ -1,15 +1,16 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import daft.functions as F
-from daft import lit
-from narwhals._utils import not_implemented
+from daft import DataType, lit
 from narwhals.compliant import ListNamespace
 
 if TYPE_CHECKING:
     from daft import Expression
+    from narwhals.typing import NonNestedLiteral
 
+    from narwhals_daft.dataframe import DaftLazyFrame
     from narwhals_daft.expr import DaftExpr
 
 
@@ -76,4 +77,50 @@ class ExprListNamespace(ListNamespace["DaftExpr"]):
 
         return self.compliant._with_elementwise(func)
 
-    contains = not_implemented()
+    def contains(self, item: NonNestedLiteral) -> DaftExpr:
+        if item is None:
+            return self.compliant._with_elementwise(
+                lambda expr: F.list_count(expr, "null") > lit(0)
+            )
+        item_dtype = DataType.infer_from_object(item)
+
+        def func(df: DaftLazyFrame, expr: Expression) -> Expression:
+            # `list_contains` requires `item` to have exactly the element type of
+            # the list, while a Python number only ever infers to Int64 or Float64,
+            # so cast it, when that is lossless, to the element type resolved
+            # against the frame's schema (plan-time only). Any other mismatch
+            # (e.g. a `Timestamp[us]` item on a `Timestamp[ns]` list) raises in
+            # Daft, like it does in Polars.
+            list_dtype = df._native_dtype(expr)
+            if not (list_dtype.is_list() or list_dtype.is_fixed_size_list()):
+                return F.list_contains(expr, lit(item))
+            element_dtype = list_dtype.dtype
+            if not (element_dtype.is_numeric() and item_dtype.is_numeric()):
+                return F.list_contains(expr, lit(item))
+            if not _is_representable(item, element_dtype):
+                # e.g. `1.5` or `300` can never be an element of an Int8 list.
+                return F.when(expr.not_null(), lit(False))
+            return F.list_contains(expr, lit(item).cast(element_dtype))
+
+        return self.compliant._with_elementwise_frame(func)
+
+
+_INTEGER_BOUNDS: dict[str, tuple[int, int]] = {
+    "Int8": (-(1 << 7), (1 << 7) - 1),
+    "Int16": (-(1 << 15), (1 << 15) - 1),
+    "Int32": (-(1 << 31), (1 << 31) - 1),
+    "Int64": (-(1 << 63), (1 << 63) - 1),
+    "UInt8": (0, (1 << 8) - 1),
+    "UInt16": (0, (1 << 16) - 1),
+    "UInt32": (0, (1 << 32) - 1),
+    "UInt64": (0, (1 << 64) - 1),
+}
+
+
+def _is_representable(item: Any, element_dtype: DataType) -> bool:
+    """Whether the numeric `item` survives a cast to an integer `element_dtype`."""
+    if not element_dtype.is_integer():
+        return True
+    lower, upper = _INTEGER_BOUNDS[str(element_dtype)]
+    is_integral = isinstance(item, int) or item.is_integer()
+    return is_integral and lower <= item <= upper
