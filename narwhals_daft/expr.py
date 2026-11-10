@@ -4,13 +4,14 @@ import operator as op
 from typing import TYPE_CHECKING, Any, Literal, TypeAlias, cast
 
 import daft.functions as F
-from daft import Window, col, lit
+from daft import DataType, Window, col, lit
 from narwhals._expression_parsing import (
     combine_alias_output_names,
     combine_evaluate_output_names,
 )
 from narwhals._utils import Implementation, not_implemented
 from narwhals.compliant import CompliantExpr
+from narwhals.exceptions import InvalidOperationError
 
 from narwhals_daft.expr_dt import ExprDateTimeNamesSpace
 from narwhals_daft.expr_list import ExprListNamespace
@@ -148,11 +149,10 @@ class DaftExpr(CompliantExpr["DaftLazyFrame", "Expression"]):
         func_name: Literal["sum", "mean", "std", "var"],
         window_size: int,
         min_samples: int,
-        ddof: int | None = None,
+        ddof: int = 1,
         *,
         center: bool,
     ) -> WindowFunction:
-        supported_funcs = ["sum", "mean", "std", "var"]
         if center:
             half = (window_size - 1) // 2
             remainder = (window_size - 1) % 2
@@ -162,23 +162,14 @@ class DaftExpr(CompliantExpr["DaftLazyFrame", "Expression"]):
             start = -(window_size - 1)
             end = 0
 
+        def agg(expr: Expression) -> Expression:
+            if func_name == "std":
+                return expr.stddev(ddof=ddof)
+            if func_name == "var":
+                return expr.var(ddof=ddof)
+            return getattr(F, func_name)(expr)
+
         def func(df: DaftLazyFrame, inputs: WindowInputs) -> Sequence[Expression]:
-            if func_name in {"sum", "mean"}:
-                func_: str = func_name
-            elif func_name == "var" and ddof == 0:
-                func_ = "var_pop"
-            elif func_name in "var" and ddof == 1:
-                func_ = "var_samp"
-            elif func_name == "std" and ddof == 0:
-                func_ = "stddev_pop"
-            elif func_name == "std" and ddof == 1:
-                func_ = "stddev_samp"
-            elif func_name in {"var", "std"}:  # pragma: no cover
-                msg = f"Only ddof=0 and ddof=1 are currently supported for rolling_{func_name}."
-                raise ValueError(msg)
-            else:  # pragma: no cover
-                msg = f"Only the following functions are supported: {supported_funcs}.\nGot: {func_name}."
-                raise ValueError(msg)
             window_kwargs: Any = {
                 "partition_by": inputs.partition_by,
                 "order_by": inputs.order_by,
@@ -189,7 +180,7 @@ class DaftExpr(CompliantExpr["DaftLazyFrame", "Expression"]):
                 F.when(
                     self._window_expression(expr.count(), **window_kwargs)
                     >= lit(min_samples),
-                    self._window_expression(getattr(F, func_)(expr), **window_kwargs),
+                    self._window_expression(agg(expr), **window_kwargs),
                 )
                 for expr in self(df)
             ]
@@ -364,6 +355,21 @@ class DaftExpr(CompliantExpr["DaftLazyFrame", "Expression"]):
         return self.__class__(
             func,
             window_function,
+            evaluate_output_names=self._evaluate_output_names,
+            alias_output_names=self._alias_output_names,
+            version=self._version,
+        )
+
+    def _with_callable_frame(
+        self, call: Callable[[DaftLazyFrame, Expression], Expression], /
+    ) -> DaftExpr:
+        """Like `_with_callable`, but `call` also receives the frame."""
+
+        def func(df: DaftLazyFrame) -> list[Expression]:
+            return [call(df, expr) for expr in self(df)]
+
+        return self.__class__(
+            func,
             evaluate_output_names=self._evaluate_output_names,
             alias_output_names=self._alias_output_names,
             version=self._version,
@@ -564,35 +570,10 @@ class DaftExpr(CompliantExpr["DaftLazyFrame", "Expression"]):
         return self._with_callable(lambda _input: _input.count("all"))
 
     def std(self, ddof: int) -> DaftExpr:
-        def func(expr: Expression) -> Expression:
-            std_pop = expr.stddev()
-            if ddof == 0:
-                return std_pop
-            n_samples = expr.count(mode="valid")
-            return std_pop * n_samples.sqrt() / (n_samples - ddof).sqrt()
-
-        def window_func(df: DaftLazyFrame, inputs: WindowInputs) -> list[Expression]:
-            assert not inputs.order_by  # noqa: S101
-            w = Window().partition_by(*inputs.partition_by)
-            return [
-                expr.stddev().over(w)
-                * expr.count().over(w).sqrt()
-                / (expr.count().over(w) - lit(ddof)).sqrt()
-                for expr in self(df)
-            ]
-
-        return self._with_callable(func, window_func)
+        return self._with_callable(lambda expr: expr.stddev(ddof=ddof))
 
     def var(self, ddof: int) -> DaftExpr:
-        def func(expr: Expression) -> Expression:
-            std_pop = expr.stddev()
-            var_pop = std_pop * std_pop
-            if ddof == 0:
-                return var_pop
-            n_samples = expr.count(mode="valid")
-            return var_pop * n_samples / (n_samples - ddof)
-
-        return self._with_callable(func)
+        return self._with_callable(lambda expr: expr.var(ddof=ddof))
 
     def max(self) -> DaftExpr:
         return self._with_callable(lambda _input: _input.max())
@@ -607,7 +588,13 @@ class DaftExpr(CompliantExpr["DaftLazyFrame", "Expression"]):
         return self._with_elementwise(lambda _input: _input.is_null())
 
     def is_nan(self) -> DaftExpr:
-        return self._with_elementwise(lambda _input: _input.float.is_nan())
+        def func(df: DaftLazyFrame, expr: Expression) -> Expression:
+            # Daft's `is_nan` only accepts floats, integers can never be NaN.
+            if df._native_dtype(expr).is_integer():
+                return F.when(expr.not_null(), lit(False))
+            return F.is_nan(expr)
+
+        return self._with_elementwise_frame(func)
 
     def is_finite(self) -> DaftExpr:
         return self._with_elementwise(
@@ -651,10 +638,22 @@ class DaftExpr(CompliantExpr["DaftLazyFrame", "Expression"]):
         return self._with_elementwise(lambda expr: expr.cos())
 
     def skew(self) -> DaftExpr:
-        return self._with_callable(lambda expr: expr.skew())
+        def func(df: DaftLazyFrame, expr: Expression) -> Expression:
+            # An empty or all-null column has the `Null` dtype, which Daft rejects.
+            if df._native_dtype(expr).is_null():
+                return expr.cast(DataType.float64()).skew()
+            return expr.skew()
+
+        return self._with_callable_frame(func)
 
     def median(self) -> DaftExpr:
-        return self._with_callable(F.median)
+        def func(df: DaftLazyFrame, expr: Expression) -> Expression:
+            if not df._native_dtype(expr).is_numeric():
+                msg = "`median` operation not supported for non-numeric input type."
+                raise InvalidOperationError(msg)
+            return F.median(expr)
+
+        return self._with_callable_frame(func)
 
     def quantile(
         self, quantile: float, interpolation: RollingInterpolationMethod

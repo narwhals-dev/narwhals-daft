@@ -16,7 +16,7 @@ from narwhals._utils import (
     not_implemented,
     parse_columns_to_drop,
 )
-from narwhals.exceptions import MultiOutputExpressionError
+from narwhals.exceptions import InvalidOperationError, MultiOutputExpressionError
 from narwhals.typing import CompliantLazyFrame
 
 from narwhals_daft.group_by import DaftLazyGroupBy
@@ -405,6 +405,15 @@ class DaftLazyFrame(
         return DaftLazyGroupBy(self, keys, drop_null_keys=drop_null_keys)
 
     def explode(self, columns: Sequence[str]) -> DaftLazyFrame:
+        dtypes = self._version.dtypes
+        schema = self.collect_schema()
+        for name in columns:
+            if (dtype := schema[name]) != dtypes.List:
+                msg = (
+                    f"`explode` operation not supported for dtype `{dtype}`, "
+                    "expected List type"
+                )
+                raise InvalidOperationError(msg)
         return self._with_native(self.native.explode(*columns))
 
     def sink_parquet(self, file: str | Path | BytesIO) -> None:
