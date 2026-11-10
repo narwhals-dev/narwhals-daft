@@ -378,6 +378,34 @@ class DaftExpr(CompliantExpr["DaftLazyFrame", "Expression"]):
             version=self._version,
         )
 
+    def _with_binary_frame(
+        self,
+        op: Callable[[DaftLazyFrame, Expression, Expression], Expression],
+        other: DaftExpr,
+    ) -> DaftExpr:
+        """Like `_with_binary`, but `op` also receives the frame."""
+
+        def func(df: DaftLazyFrame) -> list[Expression]:
+            other_native = df._evaluate_single_output_expr(other)
+            return [op(df, expr, other_native) for expr in self(df)]
+
+        def window_function(
+            df: DaftLazyFrame, window_inputs: WindowInputs
+        ) -> list[Expression]:
+            other_native = df._evaluate_window_expr(other, window_inputs)
+            return [
+                op(df, expr, other_native)
+                for expr in self.window_function(df, window_inputs)
+            ]
+
+        return self.__class__(
+            func,
+            window_function,
+            evaluate_output_names=self._evaluate_output_names,
+            alias_output_names=self._alias_output_names,
+            version=self._version,
+        )
+
     def _with_alias_output_names(self, func: AliasNames | None, /) -> DaftExpr:
         current_alias_output_names = self._alias_output_names
         alias_output_names = (
@@ -432,20 +460,20 @@ class DaftExpr(CompliantExpr["DaftLazyFrame", "Expression"]):
         )
 
     def __floordiv__(self, other: DaftExpr) -> DaftExpr:
-        return self._with_binary(lambda expr, other: (expr / other).floor(), other)
+        return self._with_binary_frame(_floordiv, other)
 
     def __rfloordiv__(self, other: DaftExpr) -> DaftExpr:
-        return self._with_binary(
-            lambda expr, other: (other / expr).floor(), other
+        return self._with_binary_frame(
+            lambda df, expr, other: _floordiv(df, other, expr), other
         ).alias("literal")
 
     def __mod__(self, other: DaftExpr) -> DaftExpr:
-        return self._with_binary(lambda expr, other: expr % other, other)
+        return self._with_binary_frame(_mod, other)
 
     def __rmod__(self, other: DaftExpr) -> DaftExpr:
-        return self._with_binary(lambda expr, other: other % expr, other).alias(
-            "literal"
-        )
+        return self._with_binary_frame(
+            lambda df, expr, other: _mod(df, other, expr), other
+        ).alias("literal")
 
     def __pow__(self, other: DaftExpr) -> DaftExpr:
         return self._with_elementwise(F.pow, expr=other)
@@ -938,3 +966,35 @@ class DaftExpr(CompliantExpr["DaftLazyFrame", "Expression"]):
     # namespaces
     cat = not_implemented()  # pyright: ignore[reportAssignmentType]
     struct = not_implemented()  # pyright: ignore[reportAssignmentType]
+
+
+def _floordiv(
+    df: DaftLazyFrame, dividend: Expression, divisor: Expression
+) -> Expression:
+    dtype = df._native_dtype(dividend + divisor)
+    if not dtype.is_integer():
+        # `/` promotes e.g. Float32 to Float64.
+        return (dividend / divisor).floor().cast(dtype)
+    # Daft's integer `//` truncates toward zero and panics on a zero divisor,
+    # Polars floors and returns null.
+    divisor = F.when(divisor != lit(0), divisor)
+    quotient = dividend // divisor
+    if str(dtype).startswith("UInt"):
+        return quotient
+    remainder = dividend % divisor
+    rounded_up = (remainder != lit(0)) & ((remainder < lit(0)) != (divisor < lit(0)))
+    one = lit(1).cast(df._native_dtype(quotient))
+    return F.when(rounded_up, quotient - one).otherwise(quotient)
+
+
+def _mod(df: DaftLazyFrame, dividend: Expression, divisor: Expression) -> Expression:
+    dtype = df._native_dtype(dividend + divisor)
+    if dtype.is_integer():
+        # Daft panics on a zero integer divisor, Polars returns null.
+        divisor = F.when(divisor != lit(0), divisor)
+        if str(dtype).startswith("UInt"):
+            return dividend % divisor
+    # Daft's `%` takes the sign of the dividend, Polars that of the divisor.
+    remainder = dividend % divisor
+    wrong_sign = (remainder != lit(0)) & ((remainder < lit(0)) != (divisor < lit(0)))
+    return F.when(wrong_sign, remainder + divisor).otherwise(remainder)
