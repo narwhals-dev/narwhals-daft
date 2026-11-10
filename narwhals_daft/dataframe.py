@@ -37,7 +37,7 @@ if TYPE_CHECKING:
     from narwhals.compliant import CompliantDataFrame
     from narwhals.dataframe import LazyFrame
     from narwhals.dtypes import DType
-    from narwhals.typing import JoinStrategy
+    from narwhals.typing import AsofJoinStrategy, JoinStrategy
     from typing_extensions import TypeIs
 
     from narwhals_daft.expr import DaftExpr, WindowInputs
@@ -388,9 +388,12 @@ class DaftLazyFrame(
         row_index_expr = (
             (
                 daft.functions.row_number().over(
-                    daft.Window().partition_by(lit(1)).order_by(*order_by)
+                    daft.Window()
+                    .partition_by(lit(1))
+                    .order_by(*order_by, nulls_first=True)
                 )
-                - 1
+                # A plain `1` would promote the `UInt64` row number to `Float64`.
+                - lit(1).cast(daft.DataType.uint64())
             )
             if order_by
             else daft.functions.monotonically_increasing_id()
@@ -398,6 +401,32 @@ class DaftLazyFrame(
         return self._with_native(
             self.native.select(row_index_expr.alias(name), *self.columns)
         )
+
+    def join_asof(
+        self,
+        other: DaftLazyFrame,
+        *,
+        left_on: str,
+        right_on: str,
+        by_left: Sequence[str] | None,
+        by_right: Sequence[str] | None,
+        strategy: AsofJoinStrategy,
+        suffix: str,
+    ) -> DaftLazyFrame:
+        try:
+            return self._with_native(
+                self.native.join_asof(
+                    other.native,
+                    left_on=left_on,
+                    right_on=right_on,
+                    left_by=list(by_left) if by_left is not None else None,
+                    right_by=list(by_right) if by_right is not None else None,
+                    strategy=strategy,
+                    suffix=suffix,
+                )
+            )
+        except daft.exceptions.DaftCoreException as e:
+            raise catch_daft_exception(e, self) from None
 
     def group_by(
         self, keys: Sequence[str] | Sequence[DaftExpr], *, drop_null_keys: bool
@@ -413,7 +442,6 @@ class DaftLazyFrame(
     gather_every = not_implemented.deprecated(
         "`LazyFrame.gather_every` is deprecated and will be removed in a future version."
     )
-    join_asof = not_implemented()
     tail = not_implemented.deprecated(
         "`LazyFrame.tail` is deprecated and will be removed in a future version."
     )
