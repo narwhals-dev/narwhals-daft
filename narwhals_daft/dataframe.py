@@ -11,6 +11,7 @@ from narwhals._utils import (
     ValidateBackendVersion,
     Version,
     check_column_names_are_unique,
+    check_columns_exist,
     extend_bool,
     generate_temporary_column_name,
     not_implemented,
@@ -189,6 +190,7 @@ class DaftLazyFrame(
         if not new_columns_map:
             msg = "At least one expression must be passed to LazyFrame.select"
             raise ValueError(msg)
+        check_column_names_are_unique([name for name, _ in new_columns_map])
         try:
             return self._with_native(
                 self._native_frame.select(
@@ -275,6 +277,8 @@ class DaftLazyFrame(
         return self._with_native(self._native_frame.drop_null())
 
     def rename(self, mapping: Mapping[str, str]) -> DaftLazyFrame:
+        # Daft accepts duplicate names, which only fail once collected.
+        check_column_names_are_unique([mapping.get(c, c) for c in self.columns])
         selection = [
             daft.col(col).alias(mapping[col]) if col in mapping else col
             for col in self.columns
@@ -285,6 +289,11 @@ class DaftLazyFrame(
         self, subset: Sequence[str] | None, *, keep: str, order_by: Sequence[str] | None
     ) -> DaftLazyFrame:
         subset_ = subset or self.columns
+        if error := check_columns_exist(subset_, available=self.columns):
+            raise error
+        if keep == "any" and not order_by:
+            # `row_number` needs an ordered window, any row per group will do.
+            return self._with_native(self.native.distinct(*subset_))
         tmp_name = generate_temporary_column_name(8, self.columns, prefix="row_index_")
         window = daft.Window().partition_by(*subset_)
         if order_by and keep == "last":
