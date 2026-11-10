@@ -7,8 +7,10 @@ from narwhals._utils import not_implemented
 from narwhals.compliant import DateTimeNamespace
 
 if TYPE_CHECKING:
+    from daft import Expression
     from narwhals.typing import TimeUnit
 
+    from narwhals_daft.dataframe import DaftLazyFrame
     from narwhals_daft.expr import DaftExpr
 
 
@@ -88,9 +90,14 @@ class ExprDateTimeNamesSpace(DateTimeNamespace["DaftExpr"]):
         )
 
     def timestamp(self, time_unit: TimeUnit) -> DaftExpr:
-        return self.compliant._with_elementwise(
-            lambda expr: F.to_unix_epoch(expr, time_unit)
-        )
+        def func(df: DaftLazyFrame, expr: Expression) -> Expression:
+            dtype = df._native_dtype(expr)
+            if not (dtype.is_date() or dtype.is_timestamp()):
+                msg = "Input should be either of Date or Datetime type"
+                raise TypeError(msg)
+            return F.to_unix_epoch(expr, time_unit)
+
+        return self.compliant._with_elementwise_frame(func)
 
     truncate = not_implemented()
     offset_by = not_implemented()
