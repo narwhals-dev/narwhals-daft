@@ -4,13 +4,14 @@ import operator as op
 from typing import TYPE_CHECKING, Any, Literal, TypeAlias, cast
 
 import daft.functions as F
-from daft import Window, col, lit
+from daft import DataType, Window, col, lit
 from narwhals._expression_parsing import (
     combine_alias_output_names,
     combine_evaluate_output_names,
 )
 from narwhals._utils import Implementation, not_implemented
 from narwhals.compliant import CompliantExpr
+from narwhals.exceptions import InvalidOperationError
 
 from narwhals_daft.expr_dt import ExprDateTimeNamesSpace
 from narwhals_daft.expr_list import ExprListNamespace
@@ -359,6 +360,21 @@ class DaftExpr(CompliantExpr["DaftLazyFrame", "Expression"]):
             version=self._version,
         )
 
+    def _with_callable_frame(
+        self, call: Callable[[DaftLazyFrame, Expression], Expression], /
+    ) -> DaftExpr:
+        """Like `_with_callable`, but `call` also receives the frame."""
+
+        def func(df: DaftLazyFrame) -> list[Expression]:
+            return [call(df, expr) for expr in self(df)]
+
+        return self.__class__(
+            func,
+            evaluate_output_names=self._evaluate_output_names,
+            alias_output_names=self._alias_output_names,
+            version=self._version,
+        )
+
     def _with_binary(self, op: Callable[..., Expression], other: DaftExpr) -> DaftExpr:
         return self.__class__(
             self._callable_to_eval_series(op, other=other),
@@ -572,7 +588,13 @@ class DaftExpr(CompliantExpr["DaftLazyFrame", "Expression"]):
         return self._with_elementwise(lambda _input: _input.is_null())
 
     def is_nan(self) -> DaftExpr:
-        return self._with_elementwise(F.is_nan)
+        def func(df: DaftLazyFrame, expr: Expression) -> Expression:
+            # Daft's `is_nan` only accepts floats, integers can never be NaN.
+            if df._native_dtype(expr).is_integer():
+                return F.when(expr.not_null(), lit(False))
+            return F.is_nan(expr)
+
+        return self._with_elementwise_frame(func)
 
     def is_finite(self) -> DaftExpr:
         return self._with_elementwise(
@@ -616,10 +638,22 @@ class DaftExpr(CompliantExpr["DaftLazyFrame", "Expression"]):
         return self._with_elementwise(lambda expr: expr.cos())
 
     def skew(self) -> DaftExpr:
-        return self._with_callable(lambda expr: expr.skew())
+        def func(df: DaftLazyFrame, expr: Expression) -> Expression:
+            # An empty or all-null column has the `Null` dtype, which Daft rejects.
+            if df._native_dtype(expr).is_null():
+                return expr.cast(DataType.float64()).skew()
+            return expr.skew()
+
+        return self._with_callable_frame(func)
 
     def median(self) -> DaftExpr:
-        return self._with_callable(F.median)
+        def func(df: DaftLazyFrame, expr: Expression) -> Expression:
+            if not df._native_dtype(expr).is_numeric():
+                msg = "`median` operation not supported for non-numeric input type."
+                raise InvalidOperationError(msg)
+            return F.median(expr)
+
+        return self._with_callable_frame(func)
 
     def quantile(
         self, quantile: float, interpolation: RollingInterpolationMethod

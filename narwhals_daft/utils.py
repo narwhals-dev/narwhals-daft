@@ -12,6 +12,7 @@ from narwhals.exceptions import (
     DuplicateError,
     InvalidOperationError,
     NarwhalsError,
+    ShapeError,
 )
 
 if TYPE_CHECKING:
@@ -215,10 +216,14 @@ def catch_daft_exception(
         return ColumnNotFoundError(
             f"{msg}\n\nHint: Did you mean one of these columns: {frame.columns}?"
         )
+    error: type[NarwhalsError] = NarwhalsError
     if "duplicate" in msg.lower():
-        return DuplicateError(msg)
-    if "TypeError" in msg:
-        return InvalidOperationError(msg)
-    if "ComputeError" in msg:
-        return ComputeError(msg)
-    return NarwhalsError(msg)
+        error = DuplicateError
+    elif "list length did not match" in msg:  # multi-column `explode`
+        error = ShapeError
+        msg = f"The exploded columns must have matching element counts.\n\n{msg}"
+    elif "TypeError" in msg:
+        error = InvalidOperationError
+    elif "ComputeError" in msg:
+        error = ComputeError
+    return error(msg)
