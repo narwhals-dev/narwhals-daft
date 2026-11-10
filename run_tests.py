@@ -98,7 +98,6 @@ TESTS_THAT_NEED_FIX = [
     "test_std_broadcating",
     "test_str_replace_value_edge_expr_scalar",
     "test_str_to_titlecase_expr",
-    "test_timestamp_invalid_date",
     "test_to_datetime_fractional_seconds",
     "test_to_datetime_infer_fmt",
     "test_to_datetime_invalid_raises",
