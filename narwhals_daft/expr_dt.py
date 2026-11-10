@@ -110,10 +110,11 @@ class ExprDateTimeNamesSpace(DateTimeNamespace["DaftExpr"]):
             if unit in _MONTHS_PER_UNIT:
                 # Count months since year 0, floor to the multiple, rebuild the date.
                 every_months = multiple * _MONTHS_PER_UNIT[unit]
-                index = F.year(expr).cast(_I64) * 12 + F.month(expr).cast(_I64) - 1
-                index = index - index % every_months
+                year, month = F.year(expr).cast(_I64), F.month(expr).cast(_I64)
+                index = year * lit(12) + month - lit(1)
+                index = index - index % lit(every_months)
                 first_day = F.make_date(
-                    index // 12, index % 12 + 1, _column_lit(expr, 1)
+                    index // lit(12), index % lit(12) + lit(1), _column_lit(expr, 1)
                 )
                 return _date_to(first_day, dtype)
             # Epoch-aligned, in local time for time zone aware input, like Polars.
