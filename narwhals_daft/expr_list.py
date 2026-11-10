@@ -47,7 +47,13 @@ class ExprListNamespace(ListNamespace["DaftExpr"]):
             lambda expr: F.list_sort(expr, desc=descending, nulls_first=not nulls_last)
         )
 
-    def unique(self) -> DaftExpr:
+    def unique(self, *, maintain_order: bool) -> DaftExpr:
+        if maintain_order:
+            # `list_distinct` keeps first-occurrence order but drops nulls, and
+            # the null is re-appended at the end below.
+            msg = "`list.unique(maintain_order=True)` is not supported for Daft."
+            raise NotImplementedError(msg)
+
         def func(expr: Expression) -> Expression:
             expr_distinct = F.list_distinct(expr)
             return F.when(
