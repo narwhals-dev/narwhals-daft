@@ -67,6 +67,9 @@ class DaftNamespace(CompliantNamespace[DaftLazyFrame, DaftExpr]):
         return DaftLazyFrame
 
     def lit(self, value: Any, dtype: DType | type[DType] | None) -> DaftExpr:
+        # Daft turns a tuple into a struct, Polars into a list.
+        value = _tuples_to_lists(value)
+
         def func(_df: DaftLazyFrame) -> list[Expression]:
             if dtype is not None:
                 return [lit(value).cast(narwhals_to_native_dtype(dtype, self._version))]
@@ -100,7 +103,8 @@ class DaftNamespace(CompliantNamespace[DaftLazyFrame, DaftExpr]):
         if how == "vertical" and not all(x.schema == schema for x in list_items[1:]):
             msg = "inputs should all have the same schema"
             raise TypeError(msg)
-        res = reduce(lambda x, y: x.union(y), native_items)
+        # `union` drops duplicate rows, `concat` keeps them.
+        res = reduce(lambda x, y: x.concat(y), native_items)
         return first._with_native(res)
 
     def all_horizontal(self, *exprs: DaftExpr, ignore_nulls: bool) -> DaftExpr:
@@ -125,7 +129,10 @@ class DaftNamespace(CompliantNamespace[DaftLazyFrame, DaftExpr]):
                     message=".*`daft\\.list_` is deprecated",
                     category=DeprecationWarning,
                 )
-                return daft.functions.columns_sum(*cols)
+                # `columns_sum` skips nulls, but yields null if every input is null.
+                # The smallest zero type keeps the sum's dtype (e.g. `Float32`).
+                zero = lit(0).cast(daft.DataType.uint8())
+                return F.coalesce(daft.functions.columns_sum(*cols), zero)
 
         return self._expr._from_elementwise_horizontal_op(func, *exprs)
 
@@ -338,3 +345,11 @@ class DaftNamespace(CompliantNamespace[DaftLazyFrame, DaftExpr]):
             alias_output_names=combine_alias_output_names(*exprs),
             version=self._version,
         )
+
+
+def _tuples_to_lists(value: Any) -> Any:
+    if isinstance(value, (tuple, list)):
+        return [_tuples_to_lists(v) for v in value]
+    if isinstance(value, dict):
+        return {k: _tuples_to_lists(v) for k, v in value.items()}
+    return value
