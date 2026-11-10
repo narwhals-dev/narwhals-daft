@@ -11,6 +11,7 @@ from narwhals._expression_parsing import (
 )
 from narwhals._utils import Implementation, not_implemented
 from narwhals.compliant import CompliantExpr
+from narwhals.exceptions import InvalidOperationError
 
 from narwhals_daft.expr_dt import ExprDateTimeNamesSpace
 from narwhals_daft.expr_list import ExprListNamespace
@@ -22,6 +23,7 @@ if TYPE_CHECKING:
     from collections.abc import Callable, Sequence
 
     from daft import Expression
+    from daft.daft import PyWindowBoundary
     from narwhals._utils import Version, _LimitedContext
     from narwhals.dtypes import DType
     from narwhals.typing import RankMethod, RollingInterpolationMethod
@@ -74,8 +76,8 @@ class DaftExpr(CompliantExpr["DaftLazyFrame", "Expression"]):
         expr: Expression,
         partition_by: Sequence[str | Expression] = (),
         order_by: Sequence[str | Expression] = (),
-        rows_start: int | None = None,
-        rows_end: int | None = None,
+        rows_start: int | PyWindowBoundary | None = None,
+        rows_end: int | PyWindowBoundary | None = None,
         *,
         descending: list[bool] | None = None,
         nulls_first: list[bool] | None = None,
@@ -406,8 +408,7 @@ class DaftExpr(CompliantExpr["DaftLazyFrame", "Expression"]):
         return self._with_elementwise(invert)
 
     def __neg__(self) -> DaftExpr:
-        neg = cast("Callable[..., Expression]", op.neg)
-        return self._with_elementwise(neg)
+        return self._with_elementwise(F.negate)
 
     def __add__(self, other: DaftExpr) -> DaftExpr:
         return self._with_binary(lambda expr, other: expr + other, other)
@@ -488,17 +489,31 @@ class DaftExpr(CompliantExpr["DaftLazyFrame", "Expression"]):
             version=self._version,
         )
 
-    def all(self) -> DaftExpr:
-        def f(expr: Expression) -> Expression:
-            return F.coalesce(expr.bool_and(), lit(True))
+    def _bool_agg(self, func: Literal["bool_and", "bool_or"]) -> DaftExpr:
+        # Daft only accepts a bare aggregation inside `over`, so `coalesce` the
+        # empty-input null outside of it.
+        default = lit(func == "bool_and")
 
-        return self._with_callable(f)
+        def f(expr: Expression) -> Expression:
+            return F.coalesce(getattr(expr, func)(), default)
+
+        def window_f(df: DaftLazyFrame, inputs: WindowInputs) -> Sequence[Expression]:
+            assert not inputs.order_by  # noqa: S101
+            return [
+                F.coalesce(
+                    self._window_expression(getattr(expr, func)(), inputs.partition_by),
+                    default,
+                )
+                for expr in self(df)
+            ]
+
+        return self._with_callable(f, window_f)
+
+    def all(self) -> DaftExpr:
+        return self._bool_agg("bool_and")
 
     def any(self) -> DaftExpr:
-        def f(expr: Expression) -> Expression:
-            return F.coalesce(expr.bool_or(), lit(False))
-
-        return self._with_callable(f)
+        return self._bool_agg("bool_or")
 
     def cast(self, dtype: DType | type[DType]) -> DaftExpr:
         def func(expr: Expression) -> Expression:
@@ -556,8 +571,17 @@ class DaftExpr(CompliantExpr["DaftLazyFrame", "Expression"]):
         return self._with_callable(f, window_f)
 
     def n_unique(self) -> DaftExpr:
+        def window_f(df: DaftLazyFrame, inputs: WindowInputs) -> Sequence[Expression]:
+            assert not inputs.order_by  # noqa: S101
+            return [
+                self._window_expression(expr.count_distinct(), inputs.partition_by)
+                + self._window_expression(expr.is_null().bool_or(), inputs.partition_by)
+                for expr in self(df)
+            ]
+
         return self._with_callable(
-            lambda _input: _input.count_distinct() + _input.is_null().bool_or()
+            lambda _input: _input.count_distinct() + _input.is_null().bool_or(),
+            window_f,
         )
 
     def len(self) -> DaftExpr:
@@ -615,7 +639,13 @@ class DaftExpr(CompliantExpr["DaftLazyFrame", "Expression"]):
         )
 
     def is_in(self, other: Sequence[Any]) -> DaftExpr:
-        return self._with_elementwise(lambda _input: _input.is_in(other))
+        # Polars never matches a null, and keeps null input as null. Daft returns
+        # null for every non-match if `other` contains a null, and `False` for
+        # null input otherwise.
+        values = [v for v in other if v is not None]
+        return self._with_elementwise(
+            lambda _input: F.when(~_input.is_null(), _input.is_in(values))
+        )
 
     def round(self, decimals: int) -> DaftExpr:
         return self._with_elementwise(lambda _input: _input.round(decimals))
@@ -663,6 +693,42 @@ class DaftExpr(CompliantExpr["DaftLazyFrame", "Expression"]):
             msg = "Only linear interpolation is supported for Daft quantile."
             raise NotImplementedError(msg)
         return self._with_callable(lambda expr: F.percentile(expr, quantile))
+
+    def _first_last(
+        self, func: Callable[[Expression], Expression], order_by: Sequence[str]
+    ) -> DaftExpr:
+        name = func.__name__.removesuffix("_value")
+
+        def f(expr: Expression) -> Expression:
+            msg = f"`{name}` is only supported for Daft within `over`."
+            raise NotImplementedError(msg)
+
+        def window_f(df: DaftLazyFrame, inputs: WindowInputs) -> Sequence[Expression]:
+            if order_by and inputs.order_by:  # pragma: no cover
+                msg = f"Can't specify both `order_by` in `over` and `{name}`."
+                raise InvalidOperationError(msg)
+            if not order_by and not inputs.order_by:  # pragma: no cover
+                msg = f"Must specify `order_by` either in `over` or `{name}`."
+                raise InvalidOperationError(msg)
+            # Daft's `first_value`/`last_value` require an explicit frame.
+            return [
+                self._window_expression(
+                    func(expr),
+                    inputs.partition_by,
+                    inputs.order_by or order_by,
+                    rows_start=Window.unbounded_preceding,
+                    rows_end=Window.unbounded_following,
+                )
+                for expr in self(df)
+            ]
+
+        return self._with_callable(f, window_f)
+
+    def first(self, order_by: Sequence[str] = ()) -> DaftExpr:
+        return self._first_last(F.first_value, order_by)
+
+    def last(self, order_by: Sequence[str] = ()) -> DaftExpr:
+        return self._first_last(F.last_value, order_by)
 
     def any_value(self, *, ignore_nulls: bool) -> DaftExpr:
         return self._with_callable(
@@ -931,8 +997,6 @@ class DaftExpr(CompliantExpr["DaftLazyFrame", "Expression"]):
     mode = not_implemented()
     replace_strict = not_implemented()
     unique = not_implemented()
-    first = not_implemented()
-    last = not_implemented()
     to_time = not_implemented()
 
     # namespaces
