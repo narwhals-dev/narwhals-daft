@@ -7,6 +7,8 @@ from narwhals._utils import not_implemented
 from narwhals.compliant import DateTimeNamespace
 
 if TYPE_CHECKING:
+    from narwhals.typing import TimeUnit
+
     from narwhals_daft.expr import DaftExpr
 
 
@@ -74,8 +76,21 @@ class ExprDateTimeNamesSpace(DateTimeNamespace["DaftExpr"]):
     def total_nanoseconds(self) -> DaftExpr:
         return self.compliant._with_elementwise(F.total_nanoseconds)
 
-    replace_time_zone = not_implemented()
-    convert_time_zone = not_implemented()
-    timestamp = not_implemented()
+    def replace_time_zone(self, time_zone: str | None) -> DaftExpr:
+        return self.compliant._with_elementwise(
+            lambda expr: F.replace_time_zone(expr, time_zone)
+        )
+
+    def convert_time_zone(self, time_zone: str) -> DaftExpr:
+        # `from_timezone` only applies to naive input, which Polars treats as UTC.
+        return self.compliant._with_elementwise(
+            lambda expr: F.convert_time_zone(expr, time_zone, from_timezone="UTC")
+        )
+
+    def timestamp(self, time_unit: TimeUnit) -> DaftExpr:
+        return self.compliant._with_elementwise(
+            lambda expr: F.to_unix_epoch(expr, time_unit)
+        )
+
     truncate = not_implemented()
     offset_by = not_implemented()
