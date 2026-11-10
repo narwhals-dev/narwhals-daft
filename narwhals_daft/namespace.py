@@ -186,7 +186,8 @@ class DaftNamespace(CompliantNamespace[DaftLazyFrame, DaftExpr]):
             return F.when(cols[1], cols[0])
 
         def func_with_otherwise(cols: list[Expression]) -> Expression:
-            return F.when(cols[1], cols[0]).otherwise(cols[2])
+            # A null predicate must fall through to `otherwise`, Daft yields null.
+            return F.when(cols[1].fill_null(lit(False)), cols[0]).otherwise(cols[2])
 
         if otherwise is None:
             return self._expr._from_elementwise_horizontal_op(func, then, predicate)
