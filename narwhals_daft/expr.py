@@ -629,9 +629,11 @@ class DaftExpr(CompliantExpr["DaftLazyFrame", "Expression"]):
 
     def is_in(self, other: Sequence[Any]) -> DaftExpr:
         # Polars never matches a null, and keeps null input as null. Daft returns
-        # null for every non-match if `other` contains a null, and `False` for
-        # null input otherwise.
+        # null for every non-match if `other` contains a null, so drop those.
         values = [v for v in other if v is not None]
+        if values:
+            return self._with_elementwise(lambda _input: _input.is_in(values))
+        # With an empty list, Daft returns `False` for null input, too.
         return self._with_elementwise(
             lambda _input: F.when(~_input.is_null(), _input.is_in(values))
         )
