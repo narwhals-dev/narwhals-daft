@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 [project]
 name = "narwhals_daft"
 version = "0.6.0"
-dependencies = ["daft>=0.5.18", "narwhals>=2.10.0"]
+dependencies = ["daft>=0.7.15", "narwhals>=2.10.0"]
 requires-python = ">=3.10"
 
 [project.entry-points.'narwhals.plugins']
