@@ -3,11 +3,13 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 import daft.functions as F
-from narwhals._utils import not_implemented
+from daft import DataType, lit
+from narwhals._duration import Interval
 from narwhals.compliant import DateTimeNamespace
 
 if TYPE_CHECKING:
     from daft import Expression
+    from narwhals._duration import IntervalUnit
     from narwhals.typing import TimeUnit
 
     from narwhals_daft.dataframe import DaftLazyFrame
@@ -99,5 +101,152 @@ class ExprDateTimeNamesSpace(DateTimeNamespace["DaftExpr"]):
 
         return self.compliant._with_elementwise_frame(func)
 
-    truncate = not_implemented()
-    offset_by = not_implemented()
+    def truncate(self, every: str) -> DaftExpr:
+        interval = Interval.parse(every)
+        multiple, unit = interval.multiple, interval.unit
+
+        def func(df: DaftLazyFrame, expr: Expression) -> Expression:
+            dtype = df._native_dtype(expr)
+            if unit in _MONTHS_PER_UNIT:
+                every_months = multiple * _MONTHS_PER_UNIT[unit]
+                date = expr if dtype.is_date() else F.date(expr)
+                if every_months in {1, 12}:
+                    # Step back to the 1st of the month (year): cheaper than `make_date`.
+                    day = F.day(expr) if every_months == 1 else F.day_of_year(expr)
+                    first_day = F.date_sub(date, day.cast(_I64) - lit(1))
+                else:
+                    # Count months since year 0, floor to the multiple, rebuild the date.
+                    year, month = F.year(expr).cast(_I64), F.month(expr).cast(_I64)
+                    index = year * lit(12) + month - lit(1)
+                    index = index - index % lit(every_months)
+                    first_day = F.make_date(
+                        index // lit(12), index % lit(12) + lit(1), _column_lit(expr, 1)
+                    )
+                return _date_to(first_day, dtype, expr)
+            # Epoch-aligned, in local time for time zone aware input, like Polars.
+            native_unit = f"{multiple} {_DATE_TRUNC_UNITS[unit]}"
+            if dtype.is_date():
+                return F.date_trunc(native_unit, expr.cast(_TS_US)).cast(
+                    DataType.date()
+                )
+            step = multiple * _NS_PER_UNIT[unit]
+            if dtype.timezone and step > _NS_PER_UNIT["h"]:
+                # Daft truncates the local time but then shifts the original instant
+                # by the same duration, an hour off when a DST change falls inside
+                # the bucket. Polars truncates the local time and attaches the time
+                # zone again. (Buckets of up to an hour can't contain a DST change.)
+                local = F.date_trunc(native_unit, F.replace_time_zone(expr, None))
+                return _localize(local, expr, str(dtype.timeunit), dtype.timezone)
+            column_step = _NS_PER_UNIT[str(dtype.timeunit)]
+            if step < column_step:
+                # Daft panics on steps finer than the column's unit. When the step
+                # divides it, every value is already on the grid.
+                if column_step % step == 0:
+                    return expr
+                expr = expr.cast(DataType.timestamp("ns", dtype.timezone))
+            return F.date_trunc(native_unit, expr)
+
+        return self.compliant._with_elementwise_frame(func)
+
+    def offset_by(self, by: str) -> DaftExpr:
+        interval = Interval.parse_no_constraints(by)
+        multiple, unit = interval.multiple, interval.unit
+
+        def func(df: DaftLazyFrame, expr: Expression) -> Expression:
+            dtype = df._native_dtype(expr)
+            time_unit = "us" if dtype.is_date() else str(dtype.timeunit)
+            if unit not in {"d", *_MONTHS_PER_UNIT}:
+                return _add_duration(expr, multiple, unit, time_unit)
+            # Calendar units shift the local wall time, so DST changes don't
+            # move the time of day.
+            time_zone = None if dtype.is_date() else dtype.timezone
+            local = F.replace_time_zone(expr, None) if time_zone else expr
+            if unit == "d":
+                shifted = _add_duration(local, multiple, unit, time_unit)
+            else:
+                months = _column_lit(local, multiple * _MONTHS_PER_UNIT[unit])
+                # `add_months` clamps to the end of the month and returns a Date.
+                shifted = F.add_months(local, months)
+                if not dtype.is_date():
+                    time_of_day = local - F.date_trunc("1 day", local)
+                    shifted = shifted.cast(DataType.timestamp(time_unit)) + time_of_day
+            return (
+                _localize(shifted, expr, time_unit, time_zone) if time_zone else shifted
+            )
+
+        return self.compliant._with_elementwise_frame(func)
+
+
+_I64 = DataType.int64()
+_TS_US = DataType.timestamp("us")
+_MONTHS_PER_UNIT: dict[IntervalUnit, int] = {"mo": 1, "q": 3, "y": 12}
+_DATE_TRUNC_UNITS: dict[IntervalUnit, str] = {
+    "ns": "nanoseconds",
+    "us": "microseconds",
+    "ms": "milliseconds",
+    "s": "seconds",
+    "m": "minutes",
+    "h": "hours",
+    "d": "days",
+}
+_NS_PER_UNIT: dict[str, int] = {
+    "ns": 1,
+    "us": 1_000,
+    "ms": 1_000_000,
+    "s": 1_000_000_000,
+    "m": 60 * 1_000_000_000,
+    "h": 3_600 * 1_000_000_000,
+    "d": 86_400 * 1_000_000_000,
+}
+
+
+def _column_lit(expr: Expression, value: int) -> Expression:
+    """An Int64 constant shaped like `expr`.
+
+    With a literal argument, `make_date` and `add_months` return the first row's
+    result for every row (Daft 0.7.24), a column-shaped one avoids that.
+    """
+    return expr.is_null().cast(_I64) * 0 + lit(value)
+
+
+def _date_to(date: Expression, dtype: DataType, reference: Expression) -> Expression:
+    """Cast a Date to `dtype`: midnight in local time for a time zone aware one."""
+    if dtype.is_date():
+        return date
+    time_unit = str(dtype.timeunit)
+    result = date.cast(DataType.timestamp(time_unit))
+    if not dtype.timezone:
+        return result
+    return _localize(result, reference, time_unit, dtype.timezone)
+
+
+def _localize(
+    local: Expression, reference: Expression, time_unit: str, time_zone: str
+) -> Expression:
+    """Attach `time_zone` to the naive local datetime `local`, like Polars does.
+
+    The UTC offset of `reference` (a time zone aware datetime) is tried first, so an
+    ambiguous local time keeps it, and one in a DST gap is moved across the gap.
+    Unlike `replace_time_zone`, this never raises.
+    """
+    naive = DataType.timestamp(time_unit)
+    aware = DataType.timestamp(time_unit, time_zone)
+
+    def utc_offset(dt: Expression) -> Expression:
+        # Casting between naive and aware keeps the UTC value.
+        return F.replace_time_zone(dt, None) - dt.cast(naive)
+
+    guess = (local - utc_offset(reference)).cast(aware)
+    return (local - utc_offset(guess)).cast(aware)
+
+
+def _add_duration(
+    expr: Expression, multiple: int, unit: IntervalUnit, time_unit: str
+) -> Expression:
+    """Add `multiple` `unit`s, expressed in the column's own time unit."""
+    nanoseconds = multiple * _NS_PER_UNIT[unit]
+    if nanoseconds % _NS_PER_UNIT[time_unit]:
+        # Not representable in the column's unit, so go to nanoseconds.
+        expr, time_unit = expr.cast(DataType.timestamp("ns")), "ns"
+    count = nanoseconds // _NS_PER_UNIT[time_unit]
+    return expr + lit(count).cast(DataType.duration(time_unit))
