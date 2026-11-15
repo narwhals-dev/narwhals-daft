@@ -469,7 +469,11 @@ class DaftExpr(CompliantExpr["DaftLazyFrame", "Expression"]):
         )
 
     def __floordiv__(self, other: DaftExpr) -> DaftExpr:
-        return self._with_binary_frame(_floordiv, other)
+        value = _literal_value(other)
+        return self._with_binary_frame(
+            lambda df, expr, other: _floordiv(df, expr, other, divisor_value=value),
+            other,
+        )
 
     def __rfloordiv__(self, other: DaftExpr) -> DaftExpr:
         return self._with_binary_frame(
@@ -477,7 +481,10 @@ class DaftExpr(CompliantExpr["DaftLazyFrame", "Expression"]):
         ).alias("literal")
 
     def __mod__(self, other: DaftExpr) -> DaftExpr:
-        return self._with_binary_frame(_mod, other)
+        value = _literal_value(other)
+        return self._with_binary_frame(
+            lambda df, expr, other: _mod(df, expr, other, divisor_value=value), other
+        )
 
     def __rmod__(self, other: DaftExpr) -> DaftExpr:
         return self._with_binary_frame(
@@ -1036,32 +1043,70 @@ class DaftExpr(CompliantExpr["DaftLazyFrame", "Expression"]):
 
 
 def _floordiv(
-    df: DaftLazyFrame, dividend: Expression, divisor: Expression
+    df: DaftLazyFrame,
+    dividend: Expression,
+    divisor: Expression,
+    *,
+    divisor_value: float | None = None,
 ) -> Expression:
     dtype = df._native_dtype(dividend + divisor)
     if not dtype.is_integer():
         # `/` promotes e.g. Float32 to Float64.
         return (dividend / divisor).floor().cast(dtype)
-    # Daft's integer `//` truncates toward zero and panics on a zero divisor,
-    # Polars floors and returns null.
-    divisor = F.when(divisor != lit(0), divisor)
-    quotient = dividend // divisor
+    # Mixed integer types (e.g. UInt16 with an Int64 literal) don't combine in all ops.
+    dividend, divisor = dividend.cast(dtype), divisor.cast(dtype)
     if str(dtype).startswith("UInt"):
-        return quotient
-    remainder = dividend % divisor
-    rounded_up = (remainder != lit(0)) & ((remainder < lit(0)) != (divisor < lit(0)))
-    one = lit(1).cast(df._native_dtype(quotient))
-    return F.when(rounded_up, quotient - one).otherwise(quotient)
+        return dividend // _nonzero(divisor, divisor_value)
+    if divisor_value == -1:
+        return F.negate(dividend.cast(dtype))  # wraps for MIN, like Polars
+    if not divisor_value:
+        # Daft panics on MIN // -1, Polars wraps: divide by 1, negate afterwards.
+        sign = lit(1).cast(dtype) - (divisor == lit(-1)).cast(dtype) * lit(2).cast(
+            dtype
+        )
+        quotient = (dividend // _nonzero(divisor * sign, None)) * sign
+    else:
+        quotient = dividend // divisor
+    # Daft's `//` truncates toward zero, Polars floors: step down where the
+    # remainder is non-zero and its sign differs from the divisor's. Arithmetic
+    # on the boolean is several times cheaper than `when` in Daft.
+    remainder = dividend - quotient * divisor
+    rounded_up = (remainder != lit(0)) & ((remainder ^ divisor) < lit(0))
+    return quotient - rounded_up.cast(dtype)
 
 
-def _mod(df: DaftLazyFrame, dividend: Expression, divisor: Expression) -> Expression:
+def _mod(
+    df: DaftLazyFrame,
+    dividend: Expression,
+    divisor: Expression,
+    *,
+    divisor_value: float | None = None,
+) -> Expression:
     dtype = df._native_dtype(dividend + divisor)
-    if dtype.is_integer():
-        # Daft panics on a zero integer divisor, Polars returns null.
-        divisor = F.when(divisor != lit(0), divisor)
-        if str(dtype).startswith("UInt"):
-            return dividend % divisor
-    # Daft's `%` takes the sign of the dividend, Polars that of the divisor.
+    if not dtype.is_integer():
+        # Polars' float modulo, including NaN for a zero or infinite divisor.
+        return (dividend - divisor * (dividend / divisor).floor()).cast(dtype)
+    # Mixed integer types (e.g. UInt16 with an Int64 literal) don't combine in all ops.
+    dividend, divisor = dividend.cast(dtype), divisor.cast(dtype)
+    if str(dtype).startswith("UInt"):
+        return dividend % _nonzero(divisor, divisor_value)
+    if divisor_value == -1:
+        return dividend * lit(0).cast(dtype)  # `% -1` is 0, but panics for MIN in Daft
+    if not divisor_value:
+        # Daft panics on MIN % -1, Polars returns 0, as does `% 1`.
+        one = (divisor == lit(-1)).cast(dtype)
+        divisor = _nonzero(divisor + one * lit(2).cast(dtype), None)
     remainder = dividend % divisor
-    wrong_sign = (remainder != lit(0)) & ((remainder < lit(0)) != (divisor < lit(0)))
-    return F.when(wrong_sign, remainder + divisor).otherwise(remainder)
+    # Daft's `%` takes the sign of the dividend, Polars that of the divisor.
+    wrong_sign = (remainder != lit(0)) & ((remainder ^ divisor) < lit(0))
+    return remainder + divisor * wrong_sign.cast(dtype)
+
+
+def _nonzero(divisor: Expression, divisor_value: float | None) -> Expression:
+    """Null out a zero integer divisor: Daft panics on it, Polars returns null."""
+    return divisor if divisor_value else F.when(divisor != lit(0), divisor)
+
+
+def _literal_value(expr: DaftExpr) -> float | None:
+    value = evaluate_literal(expr) if expr._metadata.is_literal else None
+    return cast("float | None", value)
