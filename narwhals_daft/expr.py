@@ -401,6 +401,9 @@ class DaftExpr(CompliantExpr["DaftLazyFrame", "Expression"]):
     def __or__(self, other: DaftExpr) -> DaftExpr:
         return self._with_binary(lambda expr, other: expr | other, other=other)
 
+    def __xor__(self, other: DaftExpr) -> DaftExpr:
+        return self._with_binary(lambda expr, other: expr ^ other, other=other)
+
     def __invert__(self) -> DaftExpr:
         invert = cast("Callable[..., Expression]", op.invert)
         return self._with_elementwise(invert)
