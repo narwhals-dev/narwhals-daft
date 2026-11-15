@@ -385,6 +385,34 @@ class DaftExpr(CompliantExpr["DaftLazyFrame", "Expression"]):
             version=self._version,
         )
 
+    def _with_binary_frame(
+        self,
+        op: Callable[[DaftLazyFrame, Expression, Expression], Expression],
+        other: DaftExpr,
+    ) -> DaftExpr:
+        """Like `_with_binary`, but `op` also receives the frame."""
+
+        def func(df: DaftLazyFrame) -> list[Expression]:
+            other_native = df._evaluate_single_output_expr(other)
+            return [op(df, expr, other_native) for expr in self(df)]
+
+        def window_function(
+            df: DaftLazyFrame, window_inputs: WindowInputs
+        ) -> list[Expression]:
+            other_native = df._evaluate_window_expr(other, window_inputs)
+            return [
+                op(df, expr, other_native)
+                for expr in self.window_function(df, window_inputs)
+            ]
+
+        return self.__class__(
+            func,
+            window_function,
+            evaluate_output_names=self._evaluate_output_names,
+            alias_output_names=self._alias_output_names,
+            version=self._version,
+        )
+
     def _with_alias_output_names(self, func: AliasNames | None, /) -> DaftExpr:
         current_alias_output_names = self._alias_output_names
         alias_output_names = (
@@ -441,20 +469,27 @@ class DaftExpr(CompliantExpr["DaftLazyFrame", "Expression"]):
         )
 
     def __floordiv__(self, other: DaftExpr) -> DaftExpr:
-        return self._with_binary(lambda expr, other: (expr / other).floor(), other)
+        value = _literal_value(other)
+        return self._with_binary_frame(
+            lambda df, expr, other: _floordiv(df, expr, other, divisor_value=value),
+            other,
+        )
 
     def __rfloordiv__(self, other: DaftExpr) -> DaftExpr:
-        return self._with_binary(
-            lambda expr, other: (other / expr).floor(), other
+        return self._with_binary_frame(
+            lambda df, expr, other: _floordiv(df, other, expr), other
         ).alias("literal")
 
     def __mod__(self, other: DaftExpr) -> DaftExpr:
-        return self._with_binary(lambda expr, other: expr % other, other)
+        value = _literal_value(other)
+        return self._with_binary_frame(
+            lambda df, expr, other: _mod(df, expr, other, divisor_value=value), other
+        )
 
     def __rmod__(self, other: DaftExpr) -> DaftExpr:
-        return self._with_binary(lambda expr, other: other % expr, other).alias(
-            "literal"
-        )
+        return self._with_binary_frame(
+            lambda df, expr, other: _mod(df, other, expr), other
+        ).alias("literal")
 
     def __pow__(self, other: DaftExpr) -> DaftExpr:
         return self._with_elementwise(F.pow, expr=other)
@@ -1005,3 +1040,73 @@ class DaftExpr(CompliantExpr["DaftLazyFrame", "Expression"]):
     # namespaces
     cat = not_implemented()  # pyright: ignore[reportAssignmentType]
     struct = not_implemented()  # pyright: ignore[reportAssignmentType]
+
+
+def _floordiv(
+    df: DaftLazyFrame,
+    dividend: Expression,
+    divisor: Expression,
+    *,
+    divisor_value: float | None = None,
+) -> Expression:
+    dtype = df._native_dtype(dividend + divisor)
+    if not dtype.is_integer():
+        # `/` promotes e.g. Float32 to Float64.
+        return (dividend / divisor).floor().cast(dtype)
+    # Mixed integer types (e.g. UInt16 with an Int64 literal) don't combine in all ops.
+    dividend, divisor = dividend.cast(dtype), divisor.cast(dtype)
+    if str(dtype).startswith("UInt"):
+        return dividend // _nonzero(divisor, divisor_value)
+    if divisor_value == -1:
+        return F.negate(dividend.cast(dtype))  # wraps for MIN, like Polars
+    if not divisor_value:
+        # Daft panics on MIN // -1, Polars wraps: divide by 1, negate afterwards.
+        sign = lit(1).cast(dtype) - (divisor == lit(-1)).cast(dtype) * lit(2).cast(
+            dtype
+        )
+        quotient = (dividend // _nonzero(divisor * sign, None)) * sign
+    else:
+        quotient = dividend // divisor
+    # Daft's `//` truncates toward zero, Polars floors: step down where the
+    # remainder is non-zero and its sign differs from the divisor's. Arithmetic
+    # on the boolean is several times cheaper than `when` in Daft.
+    remainder = dividend - quotient * divisor
+    rounded_up = (remainder != lit(0)) & ((remainder ^ divisor) < lit(0))
+    return quotient - rounded_up.cast(dtype)
+
+
+def _mod(
+    df: DaftLazyFrame,
+    dividend: Expression,
+    divisor: Expression,
+    *,
+    divisor_value: float | None = None,
+) -> Expression:
+    dtype = df._native_dtype(dividend + divisor)
+    if not dtype.is_integer():
+        # Polars' float modulo, including NaN for a zero or infinite divisor.
+        return (dividend - divisor * (dividend / divisor).floor()).cast(dtype)
+    # Mixed integer types (e.g. UInt16 with an Int64 literal) don't combine in all ops.
+    dividend, divisor = dividend.cast(dtype), divisor.cast(dtype)
+    if str(dtype).startswith("UInt"):
+        return dividend % _nonzero(divisor, divisor_value)
+    if divisor_value == -1:
+        return dividend * lit(0).cast(dtype)  # `% -1` is 0, but panics for MIN in Daft
+    if not divisor_value:
+        # Daft panics on MIN % -1, Polars returns 0, as does `% 1`.
+        one = (divisor == lit(-1)).cast(dtype)
+        divisor = _nonzero(divisor + one * lit(2).cast(dtype), None)
+    remainder = dividend % divisor
+    # Daft's `%` takes the sign of the dividend, Polars that of the divisor.
+    wrong_sign = (remainder != lit(0)) & ((remainder ^ divisor) < lit(0))
+    return remainder + divisor * wrong_sign.cast(dtype)
+
+
+def _nonzero(divisor: Expression, divisor_value: float | None) -> Expression:
+    """Null out a zero integer divisor: Daft panics on it, Polars returns null."""
+    return divisor if divisor_value else F.when(divisor != lit(0), divisor)
+
+
+def _literal_value(expr: DaftExpr) -> float | None:
+    value = evaluate_literal(expr) if expr._metadata.is_literal else None
+    return cast("float | None", value)
