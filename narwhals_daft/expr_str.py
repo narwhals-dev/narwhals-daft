@@ -70,18 +70,28 @@ class ExprStringNamespace(StringNamespace["DaftExpr"]):
     def slice(self, offset: int, length: int | None = None) -> DaftExpr:
         def func(expr: Expression) -> Expression:
             col_length = F.length(expr).cast(int)
-            _offset = col_length + lit(offset) if offset < 0 else lit(offset)
+            _offset = lit(offset)
             _length = lit(length) if length is not None else col_length
-            return F.substr(expr, _offset, _length)
+            if offset < 0:
+                # Polars clips a start before the beginning of the string, and
+                # shortens an explicit `length` by the overhang.
+                unclipped = col_length + _offset
+                _offset = unclipped.clip(lit(0))
+                if length is not None:
+                    _length = (_length - (_offset - unclipped)).clip(lit(0))
+            # `substr` yields null for an empty result, Polars "".
+            sliced = F.substr(expr, _offset, _length).fill_null(lit(""))
+            return F.when(~expr.is_null(), sliced)
 
         return self.compliant._with_elementwise(func)
 
     def strip_chars(self, characters: str | None) -> DaftExpr:
+        if characters == "":
+            # Polars: an empty set of characters strips nothing.
+            return self.compliant._with_elementwise(lambda expr: expr)
         if characters is not None:
-            # Feature request of `trim` in Daft
-            # https://github.com/Eventual-Inc/Daft/issues/4021
-            msg = "Non empty `characters` argument is not yet supported."
-            raise NotImplementedError(msg)
+            char_class = _char_class(characters)
+            return self._strip_chars_regex(f"^{char_class}+|{char_class}+$")
         return self.compliant._with_elementwise(lambda expr: F.lstrip(F.rstrip(expr)))
 
     def _strip_chars_regex(self, pattern: str) -> DaftExpr:
